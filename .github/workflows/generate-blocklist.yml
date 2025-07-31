@@ -1,0 +1,46 @@
+name: Generate Blocklist
+
+on:
+  schedule:
+    - cron: '0 22 * * *'  # 每天凌晨 22 点（UTC）自动运行
+  workflow_dispatch:      # 允许手动触发工作流程
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # 第三步：执行更新脚本，失败时重试最多 3 次
+      - name: Run blocklist-generator.sh (with retries)
+        run: |
+          for i in {1..3}; do
+            bash ./blocklist-generator.sh && break
+            echo "WARN: Retry $i failed, retrying in 5 seconds..."
+            sleep 5
+          done
+
+          if [ $? -ne 0 ]; then
+            echo "ERROR: blocklist-generator.sh failed after 3 attempts."
+            exit 1
+          fi
+
+      # 第四步：检查是否有变更，若有则提交并推送
+      - name: Commit and push if changes exist
+        run: |
+          git add *.txt
+
+          git diff --cached --quiet && {
+            echo "WARN: No changes detected in .txt files."
+            exit 0
+          }
+          
+          git commit -m "chore(rules): update generated reject.txt and reject-mini.txt"
+          git push
