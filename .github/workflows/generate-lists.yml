@@ -1,0 +1,60 @@
+name: Update Lists
+
+on:
+  schedule:
+    - cron: '17 2 * * *'   # 避开高峰时间段
+  workflow_dispatch:       # 支持手动触发
+
+permissions:
+  contents: write          # 需要写权限来创建/更新 Release
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout（只需脚本文件）
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Run domainset generator (retry 3 times)
+      - name: Run domainset-generator.sh
+        run: |
+          success=false
+          for i in 1 2 3; do
+            if bash ./domainset-generator.sh; then
+              success=true
+              break
+            fi
+            echo "WARN: domainset-generator.sh retry $i failed, retrying..."
+            sleep 5
+          done
+          if [ "$success" != "true" ]; then
+            echo "ERROR: domainset-generator.sh failed after 3 retries"
+            exit 1
+          fi
+
+      # 3. Publish to GitHub Release
+      - name: Publish to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 统计各列表条目数
+          stats=""
+          for f in *.txt; do
+            count=$(wc -l < "$f")
+            stats="$stats\n- **$(basename "$f" .txt)**: $count 条"
+          done
+          notes="Auto-updated on $(date -u +%Y-%m-%dT%H:%M:%SZ)\n\n## 域名统计${stats}"
+
+          # 创建 Release（如已存在则忽略错误）
+          gh release create latest \
+            --title "domainset latest" \
+            --notes "$(echo -e "$notes")" \
+            --latest=false \
+            2>/dev/null || true
+
+          # 上传/覆盖文件
+          gh release upload latest \
+            blocklist.txt nsfw.txt chinese-mainland.txt \
+            --clobber
