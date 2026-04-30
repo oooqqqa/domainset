@@ -2,24 +2,41 @@ name: Update Lists
 
 on:
   schedule:
-    - cron: '17 2 * * *'   # 避开高峰时间段
-  workflow_dispatch:       # 支持手动触发
+    - cron: '11 6 * * *'
+  workflow_dispatch:
+    inputs:
+      min_lines:
+        description: Minimum line count required for each generated list
+        required: false
+        default: '1000'
+
+concurrency:
+  group: update-lists
+  cancel-in-progress: false
 
 permissions:
-  contents: write          # 需要写权限来创建/更新 Release
+  contents: write
 
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RELEASE_TAG: latest
+      RELEASE_TITLE: domainset latest
+      MIN_LINES: ${{ github.event.inputs.min_lines || '1000' }}
 
     steps:
-      # 1. Checkout（只需脚本文件）
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      # 2. Run domainset generator (retry 3 times)
       - name: Run domainset-generator.sh
+        shell: bash
         run: |
+          set -euo pipefail
+
           success=false
           for i in 1 2 3; do
             if bash ./domainset-generator.sh; then
@@ -34,27 +51,49 @@ jobs:
             exit 1
           fi
 
-      # 3. Publish to GitHub Release
       - name: Publish to Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          # 统计各列表条目数
-          stats=""
-          for f in *.txt; do
-            count=$(wc -l < "$f")
-            stats="$stats\n- **$(basename "$f" .txt)**: $count 条"
+          set -euo pipefail
+
+          assets=(blocklist.txt nsfw.txt chinese-mainland.txt)
+          notes_file="$(mktemp)"
+          trap 'rm -f "$notes_file"' EXIT
+
+          {
+            printf 'Auto-updated on %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            printf '## 域名统计\n'
+          } > "$notes_file"
+
+          {
+            printf '## 域名统计\n\n'
+            printf '| List | Lines |\n'
+            printf '| --- | ---: |\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for file in "${assets[@]}"; do
+            if [[ ! -s "$file" ]]; then
+              echo "ERROR: expected generated file is missing or empty: $file" >&2
+              exit 1
+            fi
+
+            count=$(wc -l < "$file" | tr -d ' ')
+            name="${file%.txt}"
+            printf -- '- **%s**: %s 条\n' "$name" "$count" >> "$notes_file"
+            printf '| `%s` | %s |\n' "$file" "$count" >> "$GITHUB_STEP_SUMMARY"
           done
-          notes="Auto-updated on $(date -u +%Y-%m-%dT%H:%M:%SZ)\n\n## 域名统计${stats}"
 
-          # 创建 Release（如已存在则忽略错误）
-          gh release create latest \
-            --title "domainset latest" \
-            --notes "$(echo -e "$notes")" \
-            --latest=false \
-            2>/dev/null || true
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$notes_file"
+          else
+            gh release create "$RELEASE_TAG" \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$notes_file" \
+              --latest=false
+          fi
 
-          # 上传/覆盖文件
-          gh release upload latest \
-            blocklist.txt nsfw.txt chinese-mainland.txt \
-            --clobber
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
