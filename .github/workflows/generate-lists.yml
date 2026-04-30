@@ -36,20 +36,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          success=false
           for i in 1 2 3; do
-            if bash ./domainset-generator.sh; then
-              success=true
-              break
-            fi
-            echo "WARN: domainset-generator.sh retry $i failed, retrying..."
+            bash ./domainset-generator.sh && exit 0
+            echo "retry $i/3 failed, waiting..."
             sleep 5
           done
-          if [ "$success" != "true" ]; then
-            echo "ERROR: domainset-generator.sh failed after 3 retries"
-            exit 1
-          fi
+          echo "all retries exhausted" >&2
+          exit 1
 
       - name: Publish to Release
         env:
@@ -64,36 +57,22 @@ jobs:
 
           {
             printf 'Auto-updated on %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            printf '## 域名统计\n'
-          } > "$notes_file"
-
-          {
             printf '## 域名统计\n\n'
             printf '| List | Lines |\n'
             printf '| --- | ---: |\n'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } > "$notes_file"
 
           for file in "${assets[@]}"; do
-            if [[ ! -s "$file" ]]; then
-              echo "ERROR: expected generated file is missing or empty: $file" >&2
-              exit 1
-            fi
-
-            count=$(wc -l < "$file" | tr -d ' ')
-            name="${file%.txt}"
-            printf -- '- **%s**: %s 条\n' "$name" "$count" >> "$notes_file"
+            [[ -s "$file" ]] || { echo "$file: missing or empty" >&2; exit 1; }
+            count=$(wc -l < "$file")
+            printf '- **%s**: %s 条\n' "${file%.txt}" "$count" >> "$notes_file"
             printf '| `%s` | %s |\n' "$file" "$count" >> "$GITHUB_STEP_SUMMARY"
           done
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" \
-              --title "$RELEASE_TITLE" \
-              --notes-file "$notes_file"
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file "$notes_file"
           else
-            gh release create "$RELEASE_TAG" \
-              --title "$RELEASE_TITLE" \
-              --notes-file "$notes_file" \
-              --latest=false
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file "$notes_file" --latest=false
           fi
 
           gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
