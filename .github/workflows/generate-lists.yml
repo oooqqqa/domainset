@@ -65,7 +65,7 @@ jobs:
           for file in "${assets[@]}"; do
             [[ -s "$file" ]] || { echo "$file: missing or empty" >&2; exit 1; }
             count=$(wc -l < "$file")
-            printf '- **%s**: %s 条\n' "${file%.txt}" "$count" >> "$notes_file"
+            printf -- '- **%s**: %s 条\n' "${file%.txt}" "$count" >> "$notes_file"
             printf '| `%s` | %s |\n' "$file" "$count" >> "$GITHUB_STEP_SUMMARY"
           done
 
