@@ -6,9 +6,18 @@ on:
   workflow_dispatch:
     inputs:
       min_lines:
-        description: Minimum line count required for each generated list
+        description: Default minimum line count required for each generated list
         required: false
         default: '1000'
+      blocklist_min_lines:
+        description: Minimum line count required for blocklist.txt
+        required: false
+      nsfw_min_lines:
+        description: Minimum line count required for nsfw.txt
+        required: false
+      chinese_mainland_min_lines:
+        description: Minimum line count required for chinese-mainland.txt
+        required: false
 
 concurrency:
   group: update-lists
@@ -25,12 +34,19 @@ jobs:
       RELEASE_TAG: latest
       RELEASE_TITLE: domainset latest
       MIN_LINES: ${{ github.event.inputs.min_lines || '1000' }}
+      BLOCKLIST_MIN_LINES: ${{ github.event.inputs.blocklist_min_lines || '' }}
+      NSFW_MIN_LINES: ${{ github.event.inputs.nsfw_min_lines || '' }}
+      CHINESE_MAINLAND_MIN_LINES: ${{ github.event.inputs.chinese_mainland_min_lines || '' }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
+      - name: Run tests
+        shell: bash
+        run: bash ./tests/normalize.bash
 
       - name: Run domainset-generator.sh
         shell: bash
@@ -62,10 +78,16 @@ jobs:
             printf '| --- | ---: |\n'
           } > "$notes_file"
 
+          {
+            printf '## 域名统计\n\n'
+            printf '| List | Lines |\n'
+            printf '| --- | ---: |\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
           for file in "${assets[@]}"; do
             [[ -s "$file" ]] || { echo "$file: missing or empty" >&2; exit 1; }
             count=$(wc -l < "$file")
-            printf -- '- **%s**: %s 条\n' "${file%.txt}" "$count" >> "$notes_file"
+            printf '| `%s` | %s |\n' "$file" "$count" >> "$notes_file"
             printf '| `%s` | %s |\n' "$file" "$count" >> "$GITHUB_STEP_SUMMARY"
           done
 

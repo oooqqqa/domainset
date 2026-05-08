@@ -1,43 +1,151 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MIN_LINES=${MIN_LINES:-1000}
+DEFAULT_MIN_LINES=${MIN_LINES:-1000}
+TMPDIR_CREATED=
 
-# 规范化域名格式：
+cleanup() {
+    if [[ -n "${TMPDIR_CREATED:-}" ]]; then
+        rm -rf "$TMPDIR_CREATED"
+    fi
+}
+
+min_lines_for() {
+    local output=$1
+
+    case "$output" in
+        blocklist.txt) printf "%s\n" "${BLOCKLIST_MIN_LINES:-$DEFAULT_MIN_LINES}" ;;
+        nsfw.txt) printf "%s\n" "${NSFW_MIN_LINES:-$DEFAULT_MIN_LINES}" ;;
+        chinese-mainland.txt) printf "%s\n" "${CHINESE_MAINLAND_MIN_LINES:-$DEFAULT_MIN_LINES}" ;;
+        *) printf "%s\n" "$DEFAULT_MIN_LINES" ;;
+    esac
+}
+
+# Normalize supported domain-list formats:
 #   ||example.com^       -> .example.com
 #   example.com          -> example.com
 #   server=/example.com/ -> .example.com
 normalize() {
-    awk '
-    { gsub(/\r/, "") }
-    /^\|\|[A-Za-z0-9._-]+\^$/ { sub(/^\|\|/, "."); sub(/\^.*/, ""); print; next }
-    /^[.]?[A-Za-z0-9._-]+$/ { print; next }
-    /^server=\/[A-Za-z0-9._-]+\// { sub(/^server=\//, "."); sub(/\/.*/, ""); print; next }
-    { unmatched++ }
-    END { if (unmatched) printf("WARN: %d lines skipped\n", unmatched) > "/dev/stderr" }
+    local source=${1:-stdin}
+
+    awk -v source="$source" '
+    function trim(value) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+        return value
+    }
+
+    function valid_domain(domain, labels, count, i, label) {
+        if (domain ~ /^\./) {
+            domain = substr(domain, 2)
+        }
+        if (domain == "" || domain ~ /\.$/ || length(domain) > 253) {
+            return 0
+        }
+
+        count = split(domain, labels, ".")
+        if (count < 2) {
+            return 0
+        }
+
+        for (i = 1; i <= count; i++) {
+            label = labels[i]
+            if (length(label) < 1 || length(label) > 63) {
+                return 0
+            }
+            if (label !~ /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/) {
+                return 0
+            }
+        }
+
+        return 1
+    }
+
+    function emit(domain, leading_dot) {
+        domain = tolower(domain)
+        if (!valid_domain(domain)) {
+            return 0
+        }
+        print leading_dot domain
+        return 1
+    }
+
+    {
+        gsub(/\r/, "")
+        line = trim($0)
+
+        if (line == "" || line ~ /^[#!;]/) {
+            next
+        }
+
+        if (line ~ /^\|\|[A-Za-z0-9.-]+\^$/) {
+            sub(/^\|\|/, "", line)
+            sub(/\^$/, "", line)
+            if (emit(line, ".")) {
+                next
+            }
+        } else if (line ~ /^[.]?[A-Za-z0-9.-]+$/) {
+            leading_dot = line ~ /^\./ ? "." : ""
+            sub(/^\./, "", line)
+            if (emit(line, leading_dot)) {
+                next
+            }
+        } else if (line ~ /^server=\/[A-Za-z0-9.-]+\//) {
+            sub(/^server=\//, "", line)
+            sub(/\/.*/, "", line)
+            if (emit(line, ".")) {
+                next
+            }
+        }
+
+        skipped++
+        if (sample_count < 5) {
+            sample_count++
+            samples[sample_count] = line
+        }
+    }
+
+    END {
+        if (skipped) {
+            printf("WARN: %s: %d unsupported or invalid lines skipped\n", source, skipped) > "/dev/stderr"
+            for (i = 1; i <= sample_count; i++) {
+                printf("WARN: %s: skipped sample: %s\n", source, samples[i]) > "/dev/stderr"
+            }
+        }
+    }
     '
 }
 
+fetch_source() {
+    local source=$1
+
+    curl -fsSL "$source" || {
+        echo "curl failed: $source" >&2
+        exit 1
+    }
+}
+
 process() {
-    local output=$1; shift
+    local output=$1
+    shift
+
     if [[ $# -eq 0 ]]; then
         echo "process: no sources for $output" >&2
         return 1
     fi
 
     local tmp
-    tmp=$(mktemp)
-    trap 'rm -f "$tmp"' EXIT
+    tmp=$(mktemp "$TMPDIR_CREATED/$output.XXXXXX")
 
-    for url in "$@"; do
-        curl -fsSL "$url" || { echo "curl failed: $url" >&2; exit 1; }
-    done | normalize | LC_ALL=C sort -u > "$tmp"
+    local source
+    for source in "$@"; do
+        fetch_source "$source" | normalize "$source"
+    done | LC_ALL=C sort -u > "$tmp"
 
-    local count
+    local count min_lines
     count=$(wc -l < "$tmp")
-    if (( count < MIN_LINES )); then
-        echo "$output: only $count lines (need $MIN_LINES), aborting" >&2
-        rm -f "$tmp"
+    min_lines=$(min_lines_for "$output")
+    if (( count < min_lines )); then
+        echo "$output: only $count lines (need $min_lines), aborting" >&2
         exit 1
     fi
 
@@ -45,15 +153,21 @@ process() {
     printf "%s: %d\n" "$output" "$count"
 }
 
-process blocklist.txt \
-    https://big.oisd.nl
+main() {
+    TMPDIR_CREATED=$(mktemp -d)
+    trap cleanup EXIT
 
-process nsfw.txt \
-    https://nsfw.oisd.nl \
-    https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/adblock/nsfw.txt
+    process blocklist.txt \
+        https://big.oisd.nl
 
-# server=/012233.com/114.114.114.114 -> .012233.com
-process chinese-mainland.txt \
-    https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/refs/heads/master/accelerated-domains.china.conf
+    process nsfw.txt \
+        https://nsfw.oisd.nl \
+        https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/adblock/nsfw.txt
 
-trap - EXIT
+    process chinese-mainland.txt \
+        https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/refs/heads/master/accelerated-domains.china.conf
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
