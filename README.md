@@ -7,7 +7,7 @@ Generate normalized domain-set files from public blocklist sources.
 | File | Source | Format |
 | --- | --- | --- |
 | `blocklist.txt` | OISD big | one domain per line |
-| `nsfw.txt` | OISD NSFW and HaGeZi NSFW | one domain per line |
+| `nsfw.txt` | OISD NSFW | one domain per line |
 | `chinese-mainland.txt` | felixonmars dnsmasq china list | one domain per line |
 
 Generated entries are sorted with `LC_ALL=C sort -u`.

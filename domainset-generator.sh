@@ -161,8 +161,7 @@ main() {
         https://big.oisd.nl
 
     process nsfw.txt \
-        https://nsfw.oisd.nl \
-        https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/adblock/nsfw.txt
+        https://nsfw.oisd.nl
 
     process chinese-mainland.txt \
         https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/refs/heads/master/accelerated-domains.china.conf
