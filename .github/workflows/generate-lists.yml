@@ -9,8 +9,8 @@ on:
         description: Default minimum line count required for each generated list
         required: false
         default: '1000'
-      blocklist_min_lines:
-        description: Minimum line count required for blocklist.txt
+      ads_min_lines:
+        description: Minimum line count required for ads.txt
         required: false
       nsfw_min_lines:
         description: Minimum line count required for nsfw.txt
@@ -34,7 +34,7 @@ jobs:
       RELEASE_TAG: latest
       RELEASE_TITLE: domainset latest
       MIN_LINES: ${{ github.event.inputs.min_lines || '1000' }}
-      BLOCKLIST_MIN_LINES: ${{ github.event.inputs.blocklist_min_lines || '' }}
+      ADS_MIN_LINES: ${{ github.event.inputs.ads_min_lines || '' }}
       NSFW_MIN_LINES: ${{ github.event.inputs.nsfw_min_lines || '' }}
       CHINESE_MAINLAND_MIN_LINES: ${{ github.event.inputs.chinese_mainland_min_lines || '' }}
 
@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          assets=(blocklist.txt nsfw.txt chinese-mainland.txt)
+          assets=(ads.txt nsfw.txt chinese-mainland.txt)
           notes_file="$(mktemp)"
           trap 'rm -f "$notes_file"' EXIT
 
@@ -97,4 +97,5 @@ jobs:
             gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file "$notes_file" --latest=false
           fi
 
+          gh release delete-asset "$RELEASE_TAG" blocklist.txt --yes >/dev/null 2>&1 || true
           gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber

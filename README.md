@@ -6,7 +6,7 @@ Generate normalized domain-set files from public blocklist sources.
 
 | File | Source | Format |
 | --- | --- | --- |
-| `blocklist.txt` | OISD big | one domain per line |
+| `ads.txt` | OISD big | one domain per line |
 | `nsfw.txt` | OISD NSFW | one domain per line |
 | `chinese-mainland.txt` | felixonmars dnsmasq china list | one domain per line |
 
@@ -48,7 +48,7 @@ only ASCII letters, digits, or hyphens.
 output file. Individual outputs can override it:
 
 ```sh
-BLOCKLIST_MIN_LINES=100000
+ADS_MIN_LINES=100000
 NSFW_MIN_LINES=1000
 CHINESE_MAINLAND_MIN_LINES=10000
 ```

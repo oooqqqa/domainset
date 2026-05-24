@@ -14,7 +14,7 @@ min_lines_for() {
     local output=$1
 
     case "$output" in
-        blocklist.txt) printf "%s\n" "${BLOCKLIST_MIN_LINES:-$DEFAULT_MIN_LINES}" ;;
+        ads.txt) printf "%s\n" "${ADS_MIN_LINES:-$DEFAULT_MIN_LINES}" ;;
         nsfw.txt) printf "%s\n" "${NSFW_MIN_LINES:-$DEFAULT_MIN_LINES}" ;;
         chinese-mainland.txt) printf "%s\n" "${CHINESE_MAINLAND_MIN_LINES:-$DEFAULT_MIN_LINES}" ;;
         *) printf "%s\n" "$DEFAULT_MIN_LINES" ;;
@@ -157,7 +157,7 @@ main() {
     TMPDIR_CREATED=$(mktemp -d)
     trap cleanup EXIT
 
-    process blocklist.txt \
+    process ads.txt \
         https://big.oisd.nl
 
     process nsfw.txt \
