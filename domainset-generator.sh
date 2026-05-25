@@ -2,6 +2,9 @@
 set -euo pipefail
 
 DEFAULT_MIN_LINES=${MIN_LINES:-1000}
+DEFAULT_ADS_MIN_LINES=300000
+DEFAULT_NSFW_MIN_LINES=300000
+DEFAULT_CHINESE_MAINLAND_MIN_LINES=100000
 TMPDIR_CREATED=
 
 cleanup() {
@@ -14,11 +17,28 @@ min_lines_for() {
     local output=$1
 
     case "$output" in
-        ads.txt) printf "%s\n" "${ADS_MIN_LINES:-$DEFAULT_MIN_LINES}" ;;
-        nsfw.txt) printf "%s\n" "${NSFW_MIN_LINES:-$DEFAULT_MIN_LINES}" ;;
-        chinese-mainland.txt) printf "%s\n" "${CHINESE_MAINLAND_MIN_LINES:-$DEFAULT_MIN_LINES}" ;;
+        ads.txt) printf "%s\n" "${ADS_MIN_LINES:-${MIN_LINES:-$DEFAULT_ADS_MIN_LINES}}" ;;
+        nsfw.txt) printf "%s\n" "${NSFW_MIN_LINES:-${MIN_LINES:-$DEFAULT_NSFW_MIN_LINES}}" ;;
+        chinese-mainland.txt) printf "%s\n" "${CHINESE_MAINLAND_MIN_LINES:-${MIN_LINES:-$DEFAULT_CHINESE_MAINLAND_MIN_LINES}}" ;;
         *) printf "%s\n" "$DEFAULT_MIN_LINES" ;;
     esac
+}
+
+validate_min_lines() {
+    local name=$1
+    local value=$2
+
+    if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+        echo "$name must be a non-negative integer: $value" >&2
+        exit 1
+    fi
+}
+
+validate_config() {
+    validate_min_lines MIN_LINES "$DEFAULT_MIN_LINES"
+    validate_min_lines ADS_MIN_LINES "$(min_lines_for ads.txt)"
+    validate_min_lines NSFW_MIN_LINES "$(min_lines_for nsfw.txt)"
+    validate_min_lines CHINESE_MAINLAND_MIN_LINES "$(min_lines_for chinese-mainland.txt)"
 }
 
 # Normalize supported domain-list formats:
@@ -154,6 +174,8 @@ process() {
 }
 
 main() {
+    validate_config
+
     TMPDIR_CREATED=$(mktemp -d)
     trap cleanup EXIT
 

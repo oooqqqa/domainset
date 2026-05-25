@@ -8,16 +8,19 @@ on:
       min_lines:
         description: Default minimum line count required for each generated list
         required: false
-        default: '1000'
+        type: number
       ads_min_lines:
         description: Minimum line count required for ads.txt
         required: false
+        type: number
       nsfw_min_lines:
         description: Minimum line count required for nsfw.txt
         required: false
+        type: number
       chinese_mainland_min_lines:
         description: Minimum line count required for chinese-mainland.txt
         required: false
+        type: number
 
 concurrency:
   group: update-lists
@@ -33,7 +36,7 @@ jobs:
     env:
       RELEASE_TAG: latest
       RELEASE_TITLE: domainset latest
-      MIN_LINES: ${{ github.event.inputs.min_lines || '1000' }}
+      MIN_LINES: ${{ github.event.inputs.min_lines || '' }}
       ADS_MIN_LINES: ${{ github.event.inputs.ads_min_lines || '' }}
       NSFW_MIN_LINES: ${{ github.event.inputs.nsfw_min_lines || '' }}
       CHINESE_MAINLAND_MIN_LINES: ${{ github.event.inputs.chinese_mainland_min_lines || '' }}
@@ -68,6 +71,7 @@ jobs:
           set -euo pipefail
 
           assets=(ads.txt nsfw.txt chinese-mainland.txt)
+          release_assets=(ads.txt nsfw.txt chinese-mainland.txt SHA256SUMS manifest.json)
           notes_file="$(mktemp)"
           trap 'rm -f "$notes_file"' EXIT
 
@@ -91,6 +95,39 @@ jobs:
             printf '| `%s` | %s |\n' "$file" "$count" >> "$GITHUB_STEP_SUMMARY"
           done
 
+          sha256sum "${assets[@]}" > SHA256SUMS
+
+          {
+            printf '{\n'
+            printf '  "generated_at": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            printf '  "commit": "%s",\n' "$GITHUB_SHA"
+            printf '  "sources": {\n'
+            printf '    "ads.txt": ["https://big.oisd.nl"],\n'
+            printf '    "nsfw.txt": ["https://nsfw.oisd.nl"],\n'
+            printf '    "chinese-mainland.txt": ["https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/refs/heads/master/accelerated-domains.china.conf"]\n'
+            printf '  },\n'
+            printf '  "files": {\n'
+          } > manifest.json
+
+          for index in "${!assets[@]}"; do
+            file="${assets[$index]}"
+            count=$(wc -l < "$file")
+            hash=$(sha256sum "$file" | awk '{print $1}')
+            comma=","
+            if [[ "$index" -eq $((${#assets[@]} - 1)) ]]; then
+              comma=""
+            fi
+            printf '    "%s": {"lines": %s, "sha256": "%s"}%s\n' "$file" "$count" "$hash" "$comma" >> manifest.json
+          done
+
+          {
+            printf '  }\n'
+            printf '}\n'
+          } >> manifest.json
+
+          git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$RELEASE_TAG" --force
+
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file "$notes_file"
           else
@@ -98,4 +135,4 @@ jobs:
           fi
 
           gh release delete-asset "$RELEASE_TAG" blocklist.txt --yes >/dev/null 2>&1 || true
-          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          gh release upload "$RELEASE_TAG" "${release_assets[@]}" --clobber

@@ -12,6 +12,13 @@ Generate normalized domain-set files from public blocklist sources.
 
 Generated entries are sorted with `LC_ALL=C sort -u`.
 
+The GitHub release also includes:
+
+| File | Contents |
+| --- | --- |
+| `SHA256SUMS` | SHA-256 checksums for generated lists |
+| `manifest.json` | generation time, commit, source URLs, line counts, and checksums |
+
 ## Accepted Input Formats
 
 The generator accepts these upstream formats:
@@ -44,17 +51,27 @@ only ASCII letters, digits, or hyphens.
 
 ## Line Count Guards
 
-`MIN_LINES` sets the default minimum number of generated lines required for each
-output file. Individual outputs can override it:
+Each output has a default minimum number of generated lines required before it
+can be published:
+
+| File | Default minimum |
+| --- | ---: |
+| `ads.txt` | 300000 |
+| `nsfw.txt` | 300000 |
+| `chinese-mainland.txt` | 100000 |
+
+`MIN_LINES` can override the default minimum for all output files. Individual
+outputs can override it:
 
 ```sh
+MIN_LINES=1000
 ADS_MIN_LINES=100000
 NSFW_MIN_LINES=1000
 CHINESE_MAINLAND_MIN_LINES=10000
 ```
 
 The GitHub Actions workflow exposes the same thresholds as manual dispatch
-inputs.
+inputs. Thresholds must be non-negative integers.
 
 ## Tests
 
