@@ -9,6 +9,10 @@ COMMIT_SHA=${GITHUB_SHA:-$(git -C "$REPO_ROOT" rev-parse HEAD)}
 NOTES_FILE=${NOTES_FILE:-release-notes.md}
 SUMMARY_FILE=${SUMMARY_FILE:-}
 
+require_tools() {
+    command -v jq >/dev/null 2>&1 || { echo "jq is required to write manifest.json" >&2; exit 1; }
+}
+
 hash_file() {
     local file=$1
 
@@ -72,49 +76,48 @@ write_notes() {
 }
 
 write_manifest() {
-    local output env_var default_min_lines source_name source_url count hash comma index total
+    local output env_var default_min_lines source_name source_url count hash
+    local manifest_tmp manifest_dir sources_tmp files_tmp
 
-    total=$(($(wc -l < "$DOMAINSETS_FILE") - 1))
-    index=0
+    manifest_dir=$(mktemp -d)
+    manifest_tmp="$manifest_dir/manifest.tmp"
+    sources_tmp="$manifest_dir/sources.json"
+    files_tmp="$manifest_dir/files.json"
 
-    {
-        printf '{\n'
-        printf '  "generated_at": "%s",\n' "$GENERATED_AT"
-        printf '  "commit": "%s",\n' "$COMMIT_SHA"
-        printf '  "sources": {\n'
-    } > manifest.json
-
+    printf '{}\n' > "$sources_tmp"
+    printf '{}\n' > "$files_tmp"
     while IFS=$'\t' read -r output env_var default_min_lines source_name source_url; do
         [[ "$output" == "output" ]] && continue
-        index=$((index + 1))
-        comma=","
-        [[ "$index" -eq "$total" ]] && comma=""
-        printf '    "%s": ["%s"]%s\n' "$output" "$source_url" "$comma" >> manifest.json
-    done < "$DOMAINSETS_FILE"
 
-    {
-        printf '  },\n'
-        printf '  "files": {\n'
-    } >> manifest.json
-
-    index=0
-    while IFS=$'\t' read -r output env_var default_min_lines source_name source_url; do
-        [[ "$output" == "output" ]] && continue
-        index=$((index + 1))
         count=$(line_count "$output")
         hash=$(hash_file "$output")
-        comma=","
-        [[ "$index" -eq "$total" ]] && comma=""
-        printf '    "%s": {"lines": %s, "sha256": "%s"}%s\n' "$output" "$count" "$hash" "$comma" >> manifest.json
+
+        jq --arg output "$output" --arg source_url "$source_url" \
+            '. + {($output): [$source_url]}' "$sources_tmp" > "$manifest_tmp"
+        mv "$manifest_tmp" "$sources_tmp"
+
+        jq --arg output "$output" --argjson lines "$count" --arg sha256 "$hash" \
+            '. + {($output): {lines: $lines, sha256: $sha256}}' "$files_tmp" > "$manifest_tmp"
+        mv "$manifest_tmp" "$files_tmp"
     done < "$DOMAINSETS_FILE"
 
-    {
-        printf '  }\n'
-        printf '}\n'
-    } >> manifest.json
+    jq -n \
+        --arg generated_at "$GENERATED_AT" \
+        --arg commit "$COMMIT_SHA" \
+        --slurpfile sources "$sources_tmp" \
+        --slurpfile files "$files_tmp" \
+        '{
+            generated_at: $generated_at,
+            commit: $commit,
+            sources: $sources[0],
+            files: $files[0]
+        }' > manifest.json
+
+    rm -rf "$manifest_dir"
 }
 
 main() {
+    require_tools
     write_checksums
     write_notes
     write_manifest

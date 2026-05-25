@@ -6,6 +6,7 @@ tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
 config_file="$tmpdir/domainsets.tsv"
+escaped_config_file="$tmpdir/domainsets-escaped.tsv"
 notes_file="$tmpdir/release-notes.md"
 summary_file="$tmpdir/summary.md"
 
@@ -41,9 +42,33 @@ grep -F '  ads.txt' SHA256SUMS >/dev/null
 grep -F '  nsfw.txt' SHA256SUMS >/dev/null
 grep -F '  chinese-mainland.txt' SHA256SUMS >/dev/null
 
-grep -F '"generated_at": "2026-05-25T00:00:00Z"' manifest.json >/dev/null
-grep -F '"commit": "abc123"' manifest.json >/dev/null
-grep -F '"ads.txt": ["https://example.test/ads"]' manifest.json >/dev/null
-grep -F '"chinese-mainland.txt": {"lines": 2,' manifest.json >/dev/null
+jq -e \
+    '.generated_at == "2026-05-25T00:00:00Z"
+        and .commit == "abc123"
+        and .sources["ads.txt"] == ["https://example.test/ads"]
+        and .files["chinese-mainland.txt"].lines == 2' \
+    manifest.json >/dev/null
+
+cat > "$escaped_config_file" <<'EOF'
+output	env_var	default_min_lines	source_name	source_url
+quoted"name.txt	QUOTED_MIN_LINES	1	Quoted source	https://example.test/path?name="quoted"\value
+EOF
+
+printf 'quoted.example\n' > 'quoted"name.txt'
+
+DOMAINSETS_FILE="$escaped_config_file" \
+GENERATED_AT=2026-05-25T00:00:00Z \
+GITHUB_SHA='abc"123\sha' \
+NOTES_FILE="$notes_file.escaped" \
+    bash "$repo_root/scripts/build-release-assets.sh"
+
+jq -e \
+    --arg file 'quoted"name.txt' \
+    --arg commit 'abc"123\sha' \
+    --arg source_url 'https://example.test/path?name="quoted"\value' \
+    '.commit == $commit
+        and .sources[$file] == [$source_url]
+        and .files[$file].lines == 1' \
+    manifest.json >/dev/null
 
 printf 'release asset tests passed\n'

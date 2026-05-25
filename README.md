@@ -81,6 +81,8 @@ inputs. Thresholds must be non-negative integers.
 
 ## Tests
 
+Release asset generation uses `jq` to write `manifest.json`.
+
 Run the normalization tests with:
 
 ```sh
