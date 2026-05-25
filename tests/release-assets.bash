@@ -31,6 +31,7 @@ SUMMARY_FILE="$summary_file" \
     bash "$repo_root/scripts/build-release-assets.sh"
 
 grep -F 'Auto-updated: 2026-05-25 00:00:00 UTC' "$notes_file" >/dev/null
+grep -F 'This release is updated by GitHub Actions.' "$notes_file" >/dev/null
 grep -F '| `ads.txt` | OISD big | 2 |' "$notes_file" >/dev/null
 grep -F 'Use `SHA256SUMS` to verify downloaded files.' "$notes_file" >/dev/null
 

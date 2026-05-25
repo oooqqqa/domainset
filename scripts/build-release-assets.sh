@@ -56,7 +56,7 @@ write_notes_table() {
 write_notes() {
     {
         printf 'Auto-updated: %s UTC\n\n' "$DISPLAY_GENERATED_AT"
-        printf 'This is a rolling `latest` release updated by GitHub Actions.\n\n'
+        printf 'This release is updated by GitHub Actions.\n\n'
     } > "$NOTES_FILE"
 
     write_notes_table "$NOTES_FILE"

@@ -35,7 +35,7 @@ jobs:
     timeout-minutes: 20
     env:
       RELEASE_TAG: latest
-      RELEASE_TITLE: domainset latest
+      RELEASE_TITLE: domainset
       MIN_LINES: ${{ github.event.inputs.min_lines || '' }}
       ADS_MIN_LINES: ${{ github.event.inputs.ads_min_lines || '' }}
       NSFW_MIN_LINES: ${{ github.event.inputs.nsfw_min_lines || '' }}
