@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_MIN_LINES=${MIN_LINES:-1000}
-DEFAULT_ADS_MIN_LINES=300000
-DEFAULT_NSFW_MIN_LINES=300000
-DEFAULT_CHINESE_MAINLAND_MIN_LINES=100000
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+DOMAINSETS_FILE=${DOMAINSETS_FILE:-"$REPO_ROOT/domainsets.tsv"}
+DEFAULT_MIN_LINES=${MIN_LINES:-}
 TMPDIR_CREATED=
 
 cleanup() {
@@ -15,13 +14,18 @@ cleanup() {
 
 min_lines_for() {
     local output=$1
+    local row_output env_var default_min_lines source_name source_url override
 
-    case "$output" in
-        ads.txt) printf "%s\n" "${ADS_MIN_LINES:-${MIN_LINES:-$DEFAULT_ADS_MIN_LINES}}" ;;
-        nsfw.txt) printf "%s\n" "${NSFW_MIN_LINES:-${MIN_LINES:-$DEFAULT_NSFW_MIN_LINES}}" ;;
-        chinese-mainland.txt) printf "%s\n" "${CHINESE_MAINLAND_MIN_LINES:-${MIN_LINES:-$DEFAULT_CHINESE_MAINLAND_MIN_LINES}}" ;;
-        *) printf "%s\n" "$DEFAULT_MIN_LINES" ;;
-    esac
+    while IFS=$'\t' read -r row_output env_var default_min_lines source_name source_url; do
+        [[ "$row_output" == "output" ]] && continue
+        [[ "$row_output" == "$output" ]] || continue
+
+        override=${!env_var:-}
+        printf "%s\n" "${override:-${MIN_LINES:-$default_min_lines}}"
+        return 0
+    done < "$DOMAINSETS_FILE"
+
+    printf "%s\n" "${MIN_LINES:-1000}"
 }
 
 validate_min_lines() {
@@ -35,10 +39,14 @@ validate_min_lines() {
 }
 
 validate_config() {
-    validate_min_lines MIN_LINES "$DEFAULT_MIN_LINES"
-    validate_min_lines ADS_MIN_LINES "$(min_lines_for ads.txt)"
-    validate_min_lines NSFW_MIN_LINES "$(min_lines_for nsfw.txt)"
-    validate_min_lines CHINESE_MAINLAND_MIN_LINES "$(min_lines_for chinese-mainland.txt)"
+    local row_output env_var default_min_lines source_name source_url
+
+    [[ -z "$DEFAULT_MIN_LINES" ]] || validate_min_lines MIN_LINES "$DEFAULT_MIN_LINES"
+
+    while IFS=$'\t' read -r row_output env_var default_min_lines source_name source_url; do
+        [[ "$row_output" == "output" ]] && continue
+        validate_min_lines "$env_var" "$(min_lines_for "$row_output")"
+    done < "$DOMAINSETS_FILE"
 }
 
 # Normalize supported domain-list formats:
@@ -173,20 +181,22 @@ process() {
     printf "%s: %d\n" "$output" "$count"
 }
 
+generate_configured_outputs() {
+    local output env_var default_min_lines source_name source_url
+
+    while IFS=$'\t' read -r output env_var default_min_lines source_name source_url; do
+        [[ "$output" == "output" ]] && continue
+        process "$output" "$source_url"
+    done < "$DOMAINSETS_FILE"
+}
+
 main() {
     validate_config
 
     TMPDIR_CREATED=$(mktemp -d)
     trap cleanup EXIT
 
-    process ads.txt \
-        https://big.oisd.nl
-
-    process nsfw.txt \
-        https://nsfw.oisd.nl
-
-    process chinese-mainland.txt \
-        https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/refs/heads/master/accelerated-domains.china.conf
+    generate_configured_outputs
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

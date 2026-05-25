@@ -49,7 +49,9 @@ jobs:
 
       - name: Run tests
         shell: bash
-        run: bash ./tests/normalize.bash
+        run: |
+          bash ./tests/normalize.bash
+          bash ./tests/release-assets.bash
 
       - name: Run domainset-generator.sh
         shell: bash
@@ -70,84 +72,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          assets=(ads.txt nsfw.txt chinese-mainland.txt)
-          release_assets=(ads.txt nsfw.txt chinese-mainland.txt SHA256SUMS manifest.json)
-          notes_file="$(mktemp)"
-          trap 'rm -f "$notes_file"' EXIT
-
-          source_for() {
-            case "$1" in
-              ads.txt) printf 'OISD big' ;;
-              nsfw.txt) printf 'OISD NSFW' ;;
-              chinese-mainland.txt) printf 'felixonmars dnsmasq china list' ;;
-              *) printf 'unknown' ;;
-            esac
-          }
-
-          {
-            printf 'Auto-updated: %s UTC\n\n' "$(date -u +%Y-%m-%d\ %H:%M:%S)"
-            printf 'This is a rolling `latest` release updated by GitHub Actions.\n\n'
-            printf '## Generated lists\n\n'
-            printf '| File | Source | Lines |\n'
-            printf '| --- | --- | ---: |\n'
-          } > "$notes_file"
-
-          {
-            printf '## Generated lists\n\n'
-            printf '| File | Source | Lines |\n'
-            printf '| --- | --- | ---: |\n'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          for file in "${assets[@]}"; do
-            [[ -s "$file" ]] || { echo "$file: missing or empty" >&2; exit 1; }
-            count=$(wc -l < "$file")
-            source=$(source_for "$file")
-            printf '| `%s` | %s | %s |\n' "$file" "$source" "$count" >> "$notes_file"
-            printf '| `%s` | %s | %s |\n' "$file" "$source" "$count" >> "$GITHUB_STEP_SUMMARY"
-          done
-
-          {
-            printf '\n## Verification\n\n'
-            printf 'Use `SHA256SUMS` to verify downloaded files. `manifest.json` includes source URLs, line counts, commit, and checksums.\n'
-          } >> "$notes_file"
-
-          sha256sum "${assets[@]}" > SHA256SUMS
-
-          {
-            printf '{\n'
-            printf '  "generated_at": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            printf '  "commit": "%s",\n' "$GITHUB_SHA"
-            printf '  "sources": {\n'
-            printf '    "ads.txt": ["https://big.oisd.nl"],\n'
-            printf '    "nsfw.txt": ["https://nsfw.oisd.nl"],\n'
-            printf '    "chinese-mainland.txt": ["https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/refs/heads/master/accelerated-domains.china.conf"]\n'
-            printf '  },\n'
-            printf '  "files": {\n'
-          } > manifest.json
-
-          for index in "${!assets[@]}"; do
-            file="${assets[$index]}"
-            count=$(wc -l < "$file")
-            hash=$(sha256sum "$file" | awk '{print $1}')
-            comma=","
-            if [[ "$index" -eq $((${#assets[@]} - 1)) ]]; then
-              comma=""
-            fi
-            printf '    "%s": {"lines": %s, "sha256": "%s"}%s\n' "$file" "$count" "$hash" "$comma" >> manifest.json
-          done
-
-          {
-            printf '  }\n'
-            printf '}\n'
-          } >> manifest.json
+          NOTES_FILE=release-notes.md SUMMARY_FILE="$GITHUB_STEP_SUMMARY" bash ./scripts/build-release-assets.sh
+          mapfile -t generated_assets < <(awk -F '\t' 'NR > 1 {print $1}' domainsets.tsv)
+          release_assets=("${generated_assets[@]}" SHA256SUMS manifest.json)
 
           git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$RELEASE_TAG" --force
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file "$notes_file"
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release-notes.md
           else
-            gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file "$notes_file" --latest=false
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release-notes.md --latest=false
           fi
 
           gh release delete-asset "$RELEASE_TAG" blocklist.txt --yes >/dev/null 2>&1 || true

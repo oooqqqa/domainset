@@ -1,0 +1,4 @@
+output	env_var	default_min_lines	source_name	source_url
+ads.txt	ADS_MIN_LINES	300000	OISD big	https://big.oisd.nl
+nsfw.txt	NSFW_MIN_LINES	300000	OISD NSFW	https://nsfw.oisd.nl
+chinese-mainland.txt	CHINESE_MAINLAND_MIN_LINES	100000	felixonmars dnsmasq china list	https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/refs/heads/master/accelerated-domains.china.conf

@@ -85,4 +85,5 @@ Run the normalization tests with:
 
 ```sh
 bash tests/normalize.bash
+bash tests/release-assets.bash
 ```
