@@ -2,6 +2,12 @@
 
 Generate normalized domain-set files from public blocklist sources.
 
+## Download
+
+Latest generated files are published on the `latest` GitHub Release.
+
+Release assets include the generated lists, `SHA256SUMS`, and `manifest.json`.
+
 ## Outputs
 
 | File | Source | Format |

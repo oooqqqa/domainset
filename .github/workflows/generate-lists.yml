@@ -75,25 +75,41 @@ jobs:
           notes_file="$(mktemp)"
           trap 'rm -f "$notes_file"' EXIT
 
+          source_for() {
+            case "$1" in
+              ads.txt) printf 'OISD big' ;;
+              nsfw.txt) printf 'OISD NSFW' ;;
+              chinese-mainland.txt) printf 'felixonmars dnsmasq china list' ;;
+              *) printf 'unknown' ;;
+            esac
+          }
+
           {
-            printf 'Auto-updated on %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            printf '## 域名统计\n\n'
-            printf '| List | Lines |\n'
-            printf '| --- | ---: |\n'
+            printf 'Auto-updated: %s UTC\n\n' "$(date -u +%Y-%m-%d\ %H:%M:%S)"
+            printf 'This is a rolling `latest` release updated by GitHub Actions.\n\n'
+            printf '## Generated lists\n\n'
+            printf '| File | Source | Lines |\n'
+            printf '| --- | --- | ---: |\n'
           } > "$notes_file"
 
           {
-            printf '## 域名统计\n\n'
-            printf '| List | Lines |\n'
-            printf '| --- | ---: |\n'
+            printf '## Generated lists\n\n'
+            printf '| File | Source | Lines |\n'
+            printf '| --- | --- | ---: |\n'
           } >> "$GITHUB_STEP_SUMMARY"
 
           for file in "${assets[@]}"; do
             [[ -s "$file" ]] || { echo "$file: missing or empty" >&2; exit 1; }
             count=$(wc -l < "$file")
-            printf '| `%s` | %s |\n' "$file" "$count" >> "$notes_file"
-            printf '| `%s` | %s |\n' "$file" "$count" >> "$GITHUB_STEP_SUMMARY"
+            source=$(source_for "$file")
+            printf '| `%s` | %s | %s |\n' "$file" "$source" "$count" >> "$notes_file"
+            printf '| `%s` | %s | %s |\n' "$file" "$source" "$count" >> "$GITHUB_STEP_SUMMARY"
           done
+
+          {
+            printf '\n## Verification\n\n'
+            printf 'Use `SHA256SUMS` to verify downloaded files. `manifest.json` includes source URLs, line counts, commit, and checksums.\n'
+          } >> "$notes_file"
 
           sha256sum "${assets[@]}" > SHA256SUMS
 
