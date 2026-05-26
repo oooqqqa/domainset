@@ -94,16 +94,26 @@ jobs:
           mapfile -t generated_assets < <(awk -F '\t' 'NR > 1 {print $1}' domainsets.tsv)
           release_assets=("${generated_assets[@]}" SHA256SUMS manifest.json)
 
-          git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
-          git push origin "refs/tags/$RELEASE_TAG" --force
-
+          release_exists=false
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release-notes.md
+            release_exists=true
           else
+            git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$RELEASE_TAG" --force
             gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release-notes.md --latest=false
           fi
 
           mapfile -t current_assets < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
+
+          gh release upload "$RELEASE_TAG" "${release_assets[@]}" --clobber
+
+          if [[ "$release_exists" == true ]]; then
+            git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$RELEASE_TAG" --force
+          fi
+
+          gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release-notes.md
+
           for asset in "${current_assets[@]}"; do
             keep=false
             for expected in "${release_assets[@]}"; do
@@ -116,5 +126,3 @@ jobs:
               gh release delete-asset "$RELEASE_TAG" "$asset" --yes
             fi
           done
-
-          gh release upload "$RELEASE_TAG" "${release_assets[@]}" --clobber

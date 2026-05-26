@@ -90,6 +90,7 @@ normalize() {
 
     function emit(domain, leading_dot) {
         domain = tolower(domain)
+        sub(/^\./, "", domain)
         if (!valid_domain(domain)) {
             return 0
         }

@@ -16,6 +16,7 @@ cat > "$expected_file" <<'EOF'
 example.org
 .server.example.net
 .mixed-case.example
+.server-leading-dot.example
 EOF
 
 normalize "test-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
@@ -26,6 +27,7 @@ normalize "test-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
 example.org
 server=/server.example.net/114.114.114.114
 .Mixed-Case.Example
+server=/.server-leading-dot.example/114.114.114.114
 bad_domain
 singlelabel
 bad..example.com

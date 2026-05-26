@@ -8,6 +8,13 @@ DISPLAY_GENERATED_AT=${DISPLAY_GENERATED_AT:-$(date -u -d "$GENERATED_AT" +%Y-%m
 COMMIT_SHA=${GITHUB_SHA:-$(git -C "$REPO_ROOT" rev-parse HEAD)}
 NOTES_FILE=${NOTES_FILE:-release-notes.md}
 SUMMARY_FILE=${SUMMARY_FILE:-}
+MANIFEST_TMPDIR=
+
+cleanup() {
+    if [[ -n "${MANIFEST_TMPDIR:-}" ]]; then
+        rm -rf "$MANIFEST_TMPDIR"
+    fi
+}
 
 require_tools() {
     command -v jq >/dev/null 2>&1 || { echo "jq is required to write manifest.json" >&2; exit 1; }
@@ -79,7 +86,8 @@ write_manifest() {
     local output env_var default_min_lines source_name source_url count hash
     local manifest_tmp manifest_dir sources_tmp files_tmp
 
-    manifest_dir=$(mktemp -d)
+    MANIFEST_TMPDIR=$(mktemp -d)
+    manifest_dir=$MANIFEST_TMPDIR
     manifest_tmp="$manifest_dir/manifest.tmp"
     sources_tmp="$manifest_dir/sources.json"
     files_tmp="$manifest_dir/files.json"
@@ -112,11 +120,11 @@ write_manifest() {
             sources: $sources[0],
             files: $files[0]
         }' > manifest.json
-
-    rm -rf "$manifest_dir"
 }
 
 main() {
+    trap cleanup EXIT
+
     require_tools
     write_checksums
     write_notes
