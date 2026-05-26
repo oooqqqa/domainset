@@ -37,9 +37,9 @@ EOF
 
 diff -u "$expected_file" "$stdout_file"
 
-grep -F "WARN: test-source: 5 unsupported or invalid lines skipped" "$stderr_file" >/dev/null
-grep -F "WARN: test-source: skipped sample: bad_domain" "$stderr_file" >/dev/null
-grep -F "WARN: test-source: skipped sample: singlelabel" "$stderr_file" >/dev/null
+grep -F "warning: test-source: 5 unsupported or invalid lines skipped" "$stderr_file" >/dev/null
+grep -F "warning: test-source: skipped sample: bad_domain" "$stderr_file" >/dev/null
+grep -F "warning: test-source: skipped sample: singlelabel" "$stderr_file" >/dev/null
 
 [[ "$(min_lines_for ads.txt)" == "300000" ]]
 [[ "$(min_lines_for nsfw.txt)" == "300000" ]]
@@ -49,9 +49,9 @@ MIN_LINES=42 bash -c 'source "$1"; [[ "$(min_lines_for ads.txt)" == "42" ]]' _ "
 ADS_MIN_LINES=7 bash -c 'source "$1"; [[ "$(min_lines_for ads.txt)" == "7" ]]' _ "$repo_root/domainset-generator.sh"
 
 if MIN_LINES=not-a-number bash -c 'source "$1"; validate_config' _ "$repo_root/domainset-generator.sh" 2> "$stderr_file"; then
-    echo "expected invalid MIN_LINES to fail" >&2
+    echo "error: expected invalid MIN_LINES to fail" >&2
     exit 1
 fi
-grep -F "MIN_LINES must be a non-negative integer: not-a-number" "$stderr_file" >/dev/null
+grep -F "error: MIN_LINES must be a non-negative integer: not-a-number" "$stderr_file" >/dev/null
 
 printf 'normalize tests passed\n'

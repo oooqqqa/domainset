@@ -1,4 +1,4 @@
-name: Update Lists
+name: Update lists
 
 on:
   push:
@@ -71,19 +71,19 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run domainset-generator.sh
+      - name: Run generator
         shell: bash
         run: |
           set -euo pipefail
           for i in 1 2 3; do
             bash ./domainset-generator.sh && exit 0
-            echo "retry $i/3 failed, waiting..."
+            echo "warning: retry $i/3 failed, waiting..."
             sleep 5
           done
-          echo "all retries exhausted" >&2
+          echo "error: all retries exhausted" >&2
           exit 1
 
-      - name: Publish to Release
+      - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash

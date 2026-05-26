@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-DOMAINSETS_FILE=${DOMAINSETS_FILE:-"$REPO_ROOT/domainsets.tsv"}
-DEFAULT_MIN_LINES=${MIN_LINES:-}
-TMPDIR_CREATED=
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+domainsets_file=${DOMAINSETS_FILE:-"$repo_root/domainsets.tsv"}
+default_min_lines_override=${MIN_LINES:-}
+tmpdir_created=
 
 cleanup() {
-    if [[ -n "${TMPDIR_CREATED:-}" ]]; then
-        rm -rf "$TMPDIR_CREATED"
+    if [[ -n "${tmpdir_created:-}" ]]; then
+        rm -rf "$tmpdir_created"
     fi
 }
 
 min_lines_for() {
     local output=$1
-    local row_output env_var default_min_lines source_name source_url override
+    local row_output env_var default_min_lines _source_name source_url override
 
-    while IFS=$'\t' read -r row_output env_var default_min_lines source_name source_url; do
+    while IFS=$'\t' read -r row_output env_var default_min_lines _source_name source_url; do
         [[ "$row_output" == "output" ]] && continue
         [[ "$row_output" == "$output" ]] || continue
 
         override=${!env_var:-}
         printf "%s\n" "${override:-${MIN_LINES:-$default_min_lines}}"
         return 0
-    done < "$DOMAINSETS_FILE"
+    done < "$domainsets_file"
 
     printf "%s\n" "${MIN_LINES:-1000}"
 }
@@ -33,23 +33,23 @@ validate_min_lines() {
     local value=$2
 
     if [[ ! "$value" =~ ^[0-9]+$ ]]; then
-        echo "$name must be a non-negative integer: $value" >&2
+        echo "error: $name must be a non-negative integer: $value" >&2
         exit 1
     fi
 }
 
 validate_config() {
-    local row_output env_var default_min_lines source_name source_url
+    local row_output env_var default_min_lines _source_name source_url
 
-    [[ -z "$DEFAULT_MIN_LINES" ]] || validate_min_lines MIN_LINES "$DEFAULT_MIN_LINES"
+    [[ -z "$default_min_lines_override" ]] || validate_min_lines MIN_LINES "$default_min_lines_override"
 
-    while IFS=$'\t' read -r row_output env_var default_min_lines source_name source_url; do
+    while IFS=$'\t' read -r row_output env_var default_min_lines _source_name source_url; do
         [[ "$row_output" == "output" ]] && continue
         validate_min_lines "$env_var" "$(min_lines_for "$row_output")"
-    done < "$DOMAINSETS_FILE"
+    done < "$domainsets_file"
 }
 
-# Normalize supported domain-list formats:
+# Supported domain-list formats normalize to canonical output:
 #   ||example.com^       -> .example.com
 #   example.com          -> example.com
 #   server=/example.com/ -> .example.com
@@ -135,9 +135,9 @@ normalize() {
 
     END {
         if (skipped) {
-            printf("WARN: %s: %d unsupported or invalid lines skipped\n", source, skipped) > "/dev/stderr"
+            printf("warning: %s: %d unsupported or invalid lines skipped\n", source, skipped) > "/dev/stderr"
             for (i = 1; i <= sample_count; i++) {
-                printf("WARN: %s: skipped sample: %s\n", source, samples[i]) > "/dev/stderr"
+                printf("warning: %s: skipped sample: %s\n", source, samples[i]) > "/dev/stderr"
             }
         }
     }
@@ -148,7 +148,7 @@ fetch_source() {
     local source=$1
 
     curl -fsSL "$source" || {
-        echo "curl failed: $source" >&2
+        echo "error: curl failed: $source" >&2
         exit 1
     }
 }
@@ -158,12 +158,12 @@ process() {
     shift
 
     if [[ $# -eq 0 ]]; then
-        echo "process: no sources for $output" >&2
+        echo "error: $output: no sources configured" >&2
         return 1
     fi
 
     local tmp
-    tmp=$(mktemp "$TMPDIR_CREATED/$output.XXXXXX")
+    tmp=$(mktemp "$tmpdir_created/$output.XXXXXX")
 
     local source
     for source in "$@"; do
@@ -174,7 +174,7 @@ process() {
     count=$(wc -l < "$tmp")
     min_lines=$(min_lines_for "$output")
     if (( count < min_lines )); then
-        echo "$output: only $count lines (need $min_lines), aborting" >&2
+        echo "error: $output: only $count lines (need $min_lines)" >&2
         exit 1
     fi
 
@@ -183,18 +183,18 @@ process() {
 }
 
 generate_configured_outputs() {
-    local output env_var default_min_lines source_name source_url
+    local output _env_var _default_min_lines _source_name source_url
 
-    while IFS=$'\t' read -r output env_var default_min_lines source_name source_url; do
+    while IFS=$'\t' read -r output _env_var _default_min_lines _source_name source_url; do
         [[ "$output" == "output" ]] && continue
         process "$output" "$source_url"
-    done < "$DOMAINSETS_FILE"
+    done < "$domainsets_file"
 }
 
 main() {
     validate_config
 
-    TMPDIR_CREATED=$(mktemp -d)
+    tmpdir_created=$(mktemp -d)
     trap cleanup EXIT
 
     generate_configured_outputs
