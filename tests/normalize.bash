@@ -10,48 +10,98 @@ trap 'rm -rf "$tmpdir"' EXIT
 stdout_file="$tmpdir/stdout"
 stderr_file="$tmpdir/stderr"
 expected_file="$tmpdir/expected"
+main_dir="$tmpdir/main"
+fail_dir="$tmpdir/fail"
 
 cat > "$expected_file" <<'EOF'
 .example.com
-example.org
-.server.example.net
+.sub.example.net
 .mixed-case.example
-.server-leading-dot.example
 EOF
 
-normalize "test-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
-# comment
-! adblock comment
-; dnsmasq comment
+normalize_oisd "test-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
+[Adblock Plus]
+! comment
+
 ||Example.COM^
-example.org
-server=/server.example.net/114.114.114.114
-.Mixed-Case.Example
-server=/.server-leading-dot.example/114.114.114.114
-bad_domain
-singlelabel
-bad..example.com
--bad.example.com
-bad-.example.com
+||sub.example.net^
+||Mixed-Case.Example^
 EOF
 
 diff -u "$expected_file" "$stdout_file"
+[[ ! -s "$stderr_file" ]]
 
-grep -F "warning: test-source: 5 unsupported or invalid lines skipped" "$stderr_file" >/dev/null
-grep -F "warning: test-source: skipped sample: bad_domain" "$stderr_file" >/dev/null
-grep -F "warning: test-source: skipped sample: singlelabel" "$stderr_file" >/dev/null
-
-[[ "$(min_lines_for ads.txt)" == "300000" ]]
-[[ "$(min_lines_for nsfw.txt)" == "300000" ]]
-[[ "$(min_lines_for chinese-mainland.txt)" == "100000" ]]
-
-MIN_LINES=42 bash -c 'source "$1"; [[ "$(min_lines_for ads.txt)" == "42" ]]' _ "$repo_root/domainset-generator.sh"
-ADS_MIN_LINES=7 bash -c 'source "$1"; [[ "$(min_lines_for ads.txt)" == "7" ]]' _ "$repo_root/domainset-generator.sh"
-
-if MIN_LINES=not-a-number bash -c 'source "$1"; validate_config' _ "$repo_root/domainset-generator.sh" 2> "$stderr_file"; then
-    echo "error: expected invalid MIN_LINES to fail" >&2
+if normalize_oisd "bad-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
+||valid.example^
+example.org
+EOF
+then
+    echo "error: unsupported input should fail" >&2
     exit 1
 fi
-grep -F "error: MIN_LINES must be a non-negative integer: not-a-number" "$stderr_file" >/dev/null
+grep -F "error: bad-source: line 2: unsupported input: example.org" "$stderr_file" >/dev/null
+
+if normalize_oisd "bad-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
+||bad..example^
+EOF
+then
+    echo "error: invalid domain should fail" >&2
+    exit 1
+fi
+grep -F "error: bad-source: line 1: invalid domain: ||bad..example^" "$stderr_file" >/dev/null
+
+mkdir "$main_dir"
+cat > "$expected_file" <<'EOF'
+.a.example
+.b.example
+EOF
+
+(
+    cd "$main_dir"
+    source "$repo_root/domainset-generator.sh"
+    output_file=ads.txt
+    min_domain_count=2
+
+    fetch_oisd() {
+        cat <<'EOF'
+[Adblock Plus]
+||b.example^
+||a.example^
+||b.example^
+EOF
+    }
+
+    main
+) > "$stdout_file" 2> "$stderr_file"
+
+diff -u "$expected_file" "$main_dir/ads.txt"
+grep -F "ads.txt: 2 domains" "$stdout_file" >/dev/null
+[[ ! -s "$stderr_file" ]]
+
+mkdir "$fail_dir"
+if (
+    cd "$fail_dir"
+    source "$repo_root/domainset-generator.sh"
+    output_file=ads.txt
+    min_domain_count=2
+
+    fetch_oisd() {
+        cat <<'EOF'
+[Adblock Plus]
+||only.example^
+EOF
+    }
+
+    main
+) > "$stdout_file" 2> "$stderr_file"
+then
+    echo "error: small output should fail" >&2
+    exit 1
+fi
+grep -F "error: ads.txt: only 1 domains (need 2)" "$stderr_file" >/dev/null
+[[ ! -e "$fail_dir/ads.txt" ]]
+shopt -s nullglob
+leftovers=("$fail_dir"/ads.txt.*)
+(( ${#leftovers[@]} == 0 ))
 
 printf 'normalize tests passed\n'

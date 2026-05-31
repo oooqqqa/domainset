@@ -1,4 +1,4 @@
-name: Update lists
+name: Update ads
 
 on:
   push:
@@ -8,26 +8,9 @@ on:
   schedule:
     - cron: '11 6 * * *'
   workflow_dispatch:
-    inputs:
-      min_lines:
-        description: Default minimum line count required for each generated list
-        required: false
-        type: number
-      ads_min_lines:
-        description: Minimum line count required for ads.txt
-        required: false
-        type: number
-      nsfw_min_lines:
-        description: Minimum line count required for nsfw.txt
-        required: false
-        type: number
-      chinese_mainland_min_lines:
-        description: Minimum line count required for chinese-mainland.txt
-        required: false
-        type: number
 
 concurrency:
-  group: update-lists
+  group: update-ads
   cancel-in-progress: false
 
 permissions:
@@ -47,23 +30,20 @@ jobs:
       - name: Run tests
         shell: bash
         run: |
+          set -euo pipefail
+          shellcheck ./domainset-generator.sh ./tests/normalize.bash
           bash ./tests/normalize.bash
-          bash ./tests/release-assets.bash
 
   update:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     needs: test
     permissions:
       contents: write
     env:
       RELEASE_TAG: latest
       RELEASE_TITLE: domainset
-      MIN_LINES: ${{ github.event.inputs.min_lines || '' }}
-      ADS_MIN_LINES: ${{ github.event.inputs.ads_min_lines || '' }}
-      NSFW_MIN_LINES: ${{ github.event.inputs.nsfw_min_lines || '' }}
-      CHINESE_MAINLAND_MIN_LINES: ${{ github.event.inputs.chinese_mainland_min_lines || '' }}
 
     steps:
       - name: Checkout repository
@@ -71,58 +51,44 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run generator
+      - name: Generate ads.txt
         shell: bash
         run: |
           set -euo pipefail
-          for i in 1 2 3; do
-            bash ./domainset-generator.sh && exit 0
-            echo "warning: retry $i/3 failed, waiting..."
-            sleep 5
+          for attempt in 1 2 3; do
+            if bash ./domainset-generator.sh; then
+              exit 0
+            fi
+            echo "warning: attempt $attempt/3 failed"
+            sleep 10
           done
-          echo "error: all retries exhausted" >&2
+          echo "error: all attempts failed" >&2
           exit 1
 
-      - name: Publish release
+      - name: Publish ads.txt
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
 
-          NOTES_FILE=release-notes.md SUMMARY_FILE="$GITHUB_STEP_SUMMARY" bash ./scripts/build-release-assets.sh
-          mapfile -t generated_assets < <(awk -F '\t' 'NR > 1 {print $1}' domainsets.tsv)
-          release_assets=("${generated_assets[@]}" SHA256SUMS manifest.json)
+          notes="Generated ads.txt from https://big.oisd.nl"
 
-          release_exists=false
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            release_exists=true
+            gh release upload "$RELEASE_TAG" ads.txt --clobber
+            git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$RELEASE_TAG" --force
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes "$notes"
           else
             git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
             git push origin "refs/tags/$RELEASE_TAG" --force
-            gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release-notes.md --latest=false
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes "$notes" --latest=false
+            gh release upload "$RELEASE_TAG" ads.txt --clobber
           fi
 
-          mapfile -t current_assets < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
-
-          gh release upload "$RELEASE_TAG" "${release_assets[@]}" --clobber
-
-          if [[ "$release_exists" == true ]]; then
-            git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
-            git push origin "refs/tags/$RELEASE_TAG" --force
-          fi
-
-          gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release-notes.md
-
-          for asset in "${current_assets[@]}"; do
-            keep=false
-            for expected in "${release_assets[@]}"; do
-              if [[ "$asset" == "$expected" ]]; then
-                keep=true
-                break
-              fi
-            done
-            if [[ "$keep" == false ]]; then
+          mapfile -t assets < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
+          for asset in "${assets[@]}"; do
+            if [[ "$asset" != "ads.txt" ]]; then
               gh release delete-asset "$RELEASE_TAG" "$asset" --yes
             fi
           done
