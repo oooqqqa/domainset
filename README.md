@@ -1,5 +1,8 @@
 # domainset
 
+Archived. The GitHub Actions workflow has been disabled and kept under
+`.github/archived-workflows/` for reference.
+
 Generate `ads.txt` from [OISD big](https://big.oisd.nl).
 
 The generator has one input and one output:
@@ -48,5 +51,5 @@ shellcheck ./domainset-generator.sh ./tests/normalize.bash
 bash ./tests/normalize.bash
 ```
 
-GitHub Actions runs the same checks, then publishes `ads.txt` to the `latest`
-release on schedule or manual dispatch.
+The archived GitHub Actions workflow used to run the same checks, then publish
+`ads.txt` to the `latest` release on schedule or manual dispatch.
