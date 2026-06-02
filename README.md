@@ -1,14 +1,11 @@
 # domainset
 
-Archived. The GitHub Actions workflow has been disabled and kept under
-`.github/archived-workflows/` for reference.
-
-Generate `ads.txt` from [OISD big](https://big.oisd.nl).
+Generate `ads.txt` from [OISD small](https://small.oisd.nl).
 
 The generator has one input and one output:
 
 ```text
-https://big.oisd.nl -> ads.txt
+https://small.oisd.nl -> ads.txt
 ```
 
 `ads.txt` contains one domain-set entry per line. OISD rules like this:
@@ -34,7 +31,7 @@ bash ./domainset-generator.sh
 
 The script writes `ads.txt` in the repository root.
 
-The output must contain at least 300000 domains. Anything smaller is treated as
+The output must contain at least 50000 domains. Anything smaller is treated as
 an upstream or parser failure.
 
 ## Requirements
@@ -51,5 +48,5 @@ shellcheck ./domainset-generator.sh ./tests/normalize.bash
 bash ./tests/normalize.bash
 ```
 
-The archived GitHub Actions workflow used to run the same checks, then publish
-`ads.txt` to the `latest` release on schedule or manual dispatch.
+GitHub Actions runs the same checks, then publishes `ads.txt` to the `latest`
+release on schedule or manual dispatch.

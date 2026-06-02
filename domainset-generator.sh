@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source_url=https://big.oisd.nl
+source_url=https://small.oisd.nl
 output_file=ads.txt
-min_domain_count=300000
+min_domain_count=50000
 curl_connect_timeout=10
 curl_max_time=120
 tmp_file=

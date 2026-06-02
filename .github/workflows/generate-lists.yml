@@ -72,7 +72,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          notes="Generated ads.txt from https://big.oisd.nl"
+          notes="Generated ads.txt from https://small.oisd.nl"
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" ads.txt --clobber
