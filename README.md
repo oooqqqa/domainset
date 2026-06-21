@@ -1,11 +1,11 @@
 # domainset
 
-Generate `ads.txt` from [OISD small](https://small.oisd.nl).
+Generate `ads.txt` from [OISD big](https://big.oisd.nl).
 
 The generator has one input and one output:
 
 ```text
-https://small.oisd.nl -> ads.txt
+https://big.oisd.nl -> ads.txt
 ```
 
 `ads.txt` contains one domain-set entry per line. OISD rules like this:
