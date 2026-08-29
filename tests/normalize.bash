@@ -50,32 +50,96 @@ then
 fi
 grep -F "error: bad-source: line 1: invalid domain: ||bad..example^" "$stderr_file" >/dev/null
 
-mkdir "$main_dir"
 cat > "$expected_file" <<'EOF'
+.0.zone
+.cn
+.example.cn
+.mixed-case.example
+EOF
+
+normalize_dnsmasq_china "china-test-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
+# comment
+
+server=/0.zone/114.114.114.114
+server=/cn/114.114.114.114
+server=/example.cn/114.114.114.114
+server=/Mixed-Case.Example/114.114.114.114
+EOF
+
+diff -u "$expected_file" "$stdout_file"
+[[ ! -s "$stderr_file" ]]
+
+if normalize_dnsmasq_china "bad-china-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
+server=/valid.example/114.114.114.114
+server=/example.org/8.8.8.8
+EOF
+then
+    echo "error: unsupported dnsmasq input should fail" >&2
+    exit 1
+fi
+grep -F "error: bad-china-source: line 2: unsupported input: server=/example.org/8.8.8.8" "$stderr_file" >/dev/null
+
+if normalize_dnsmasq_china "bad-china-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
+server=/bad..example/114.114.114.114
+EOF
+then
+    echo "error: invalid dnsmasq domain should fail" >&2
+    exit 1
+fi
+grep -F "error: bad-china-source: line 1: invalid domain: server=/bad..example/114.114.114.114" "$stderr_file" >/dev/null
+
+mkdir "$main_dir"
+cat > "$tmpdir/expected-ads" <<'EOF'
 .a.example
 .b.example
+EOF
+cat > "$tmpdir/expected-china" <<'EOF'
+.china.example
+.cn
+.example.cn
 EOF
 
 (
     cd "$main_dir"
     source "$repo_root/domainset-generator.sh"
-    output_file=ads.txt
-    min_domain_count=2
+    oisd_source_url=mock://oisd
+    china_source_url=mock://china
+    ads_output_file=ads.txt
+    china_output_file=china.txt
+    min_ads_count=2
+    min_china_count=3
 
-    fetch_oisd() {
-        cat <<'EOF'
+    fetch_url() {
+        case "$1" in
+            mock://oisd)
+                cat <<'EOF'
 [Adblock Plus]
 ||b.example^
 ||a.example^
 ||b.example^
 EOF
+                ;;
+            mock://china)
+                cat <<'EOF'
+# comment
+server=/cn/114.114.114.114
+server=/example.cn/114.114.114.114
+server=/china.example/114.114.114.114
+EOF
+                ;;
+            *)
+                return 1
+                ;;
+        esac
     }
 
     main
 ) > "$stdout_file" 2> "$stderr_file"
 
-diff -u "$expected_file" "$main_dir/ads.txt"
+diff -u "$tmpdir/expected-ads" "$main_dir/ads.txt"
+diff -u "$tmpdir/expected-china" "$main_dir/china.txt"
 grep -F "ads.txt: 2 domains" "$stdout_file" >/dev/null
+grep -F "china.txt: 3 domains" "$stdout_file" >/dev/null
 [[ ! -s "$stderr_file" ]]
 
 mkdir "$fail_dir"
@@ -83,16 +147,15 @@ if (
     cd "$fail_dir"
     source "$repo_root/domainset-generator.sh"
     output_file=ads.txt
-    min_domain_count=2
 
-    fetch_oisd() {
+    fetch_url() {
         cat <<'EOF'
 [Adblock Plus]
 ||only.example^
 EOF
     }
 
-    main
+    generate_list mock://oisd "$output_file" 2 normalize_oisd
 ) > "$stdout_file" 2> "$stderr_file"
 then
     echo "error: small output should fail" >&2

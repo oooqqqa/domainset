@@ -1,4 +1,4 @@
-name: Update ads
+name: Update domain sets
 
 on:
   push:
@@ -51,7 +51,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Generate ads.txt
+      - name: Generate domain sets
         shell: bash
         run: |
           set -euo pipefail
@@ -65,17 +65,17 @@ jobs:
           echo "error: all attempts failed" >&2
           exit 1
 
-      - name: Publish ads.txt
+      - name: Publish domain sets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
 
-          notes="Generated ads.txt from https://big.oisd.nl"
+          notes=$'Generated domain-set files from:\n- https://big.oisd.nl\n- https://github.com/felixonmars/dnsmasq-china-list/blob/master/accelerated-domains.china.conf'
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" ads.txt --clobber
+            gh release upload "$RELEASE_TAG" ads.txt china.txt --clobber
             git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
             git push origin "refs/tags/$RELEASE_TAG" --force
             gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes "$notes"
@@ -83,12 +83,12 @@ jobs:
             git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
             git push origin "refs/tags/$RELEASE_TAG" --force
             gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes "$notes" --latest=false
-            gh release upload "$RELEASE_TAG" ads.txt --clobber
+            gh release upload "$RELEASE_TAG" ads.txt china.txt --clobber
           fi
 
           mapfile -t assets < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
           for asset in "${assets[@]}"; do
-            if [[ "$asset" != "ads.txt" ]]; then
+            if [[ "$asset" != "ads.txt" && "$asset" != "china.txt" ]]; then
               gh release delete-asset "$RELEASE_TAG" "$asset" --yes
             fi
           done

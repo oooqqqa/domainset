@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source_url=https://big.oisd.nl
-output_file=ads.txt
-min_domain_count=50000
+oisd_source_url=https://big.oisd.nl
+china_source_url=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/accelerated-domains.china.conf
+ads_output_file=ads.txt
+china_output_file=china.txt
+min_ads_count=50000
+min_china_count=100000
 curl_connect_timeout=10
 curl_max_time=120
 tmp_file=
@@ -25,7 +28,9 @@ line_count() {
     wc -l < "$file" | awk '{print $1}'
 }
 
-fetch_oisd() {
+fetch_url() {
+    local url=$1
+
     curl \
         --fail \
         --silent \
@@ -33,20 +38,21 @@ fetch_oisd() {
         --location \
         --connect-timeout "$curl_connect_timeout" \
         --max-time "$curl_max_time" \
-        "$source_url"
+        "$url"
 }
 
-normalize_oisd() {
-    local source=${1:-stdin}
+normalize_domains() {
+    local input_format=$1
+    local source=${2:-stdin}
 
-    awk -v source="$source" '
-    function valid_domain(domain, labels, count, i, label) {
+    awk -v input_format="$input_format" -v source="$source" '
+    function valid_domain(domain, min_labels, labels, count, i, label) {
         if (domain == "" || domain ~ /^\./ || domain ~ /\.$/ || length(domain) > 253) {
             return 0
         }
 
         count = split(domain, labels, ".")
-        if (count < 2) {
+        if (count < min_labels) {
             return 0
         }
 
@@ -74,19 +80,36 @@ normalize_oisd() {
         line = $0
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
 
-        if (line == "" || line == "[Adblock Plus]" || line ~ /^!/) {
+        if (line == "") {
             next
         }
 
-        if (line !~ /^\|\|[A-Za-z0-9.-]+\^$/) {
-            fail("unsupported input")
+        if (input_format == "oisd") {
+            if (line == "[Adblock Plus]" || line ~ /^!/) {
+                next
+            }
+            if (line !~ /^\|\|[A-Za-z0-9.-]+\^$/) {
+                fail("unsupported input")
+            }
+            sub(/^\|\|/, "", line)
+            sub(/\^$/, "", line)
+        } else if (input_format == "dnsmasq-china") {
+            if (line ~ /^#/) {
+                next
+            }
+            if (line !~ /^server=\/[A-Za-z0-9.-]+\/114\.114\.114\.114$/) {
+                fail("unsupported input")
+            }
+            sub(/^server=\//, "", line)
+            sub(/\/114\.114\.114\.114$/, "", line)
+        } else {
+            fail("unknown input format")
         }
 
-        sub(/^\|\|/, "", line)
-        sub(/\^$/, "", line)
         domain = tolower(line)
 
-        if (!valid_domain(domain)) {
+        min_labels = (input_format == "dnsmasq-china" ? 1 : 2)
+        if (!valid_domain(domain, min_labels)) {
             fail("invalid domain")
         }
 
@@ -95,13 +118,25 @@ normalize_oisd() {
     '
 }
 
-main() {
+normalize_oisd() {
+    normalize_domains oisd "${1:-stdin}"
+}
+
+normalize_dnsmasq_china() {
+    normalize_domains dnsmasq-china "${1:-stdin}"
+}
+
+generate_list() {
+    local source_url=$1
+    local output_file=$2
+    local min_domain_count=$3
+    local normalizer=$4
     local count
 
     tmp_file=$(mktemp "$output_file.XXXXXX")
     trap cleanup EXIT
 
-    fetch_oisd | normalize_oisd "$source_url" | LC_ALL=C sort -u > "$tmp_file"
+    fetch_url "$source_url" | "$normalizer" "$source_url" | LC_ALL=C sort -u > "$tmp_file"
 
     count=$(line_count "$tmp_file")
     if (( count < min_domain_count )); then
@@ -111,6 +146,11 @@ main() {
     mv "$tmp_file" "$output_file"
     tmp_file=
     printf "%s: %d domains\n" "$output_file" "$count"
+}
+
+main() {
+    generate_list "$oisd_source_url" "$ads_output_file" "$min_ads_count" normalize_oisd
+    generate_list "$china_source_url" "$china_output_file" "$min_china_count" normalize_dnsmasq_china
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
