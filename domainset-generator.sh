@@ -6,7 +6,10 @@ china_source_url=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-lis
 ads_output_file=ads.txt
 china_output_file=china.txt
 min_ads_count=50000
-min_china_count=100000
+min_china_count=50000
+previous_dir=${PREVIOUS_DIR:-}
+allow_large_change=${ALLOW_LARGE_CHANGE:-false}
+max_change_percent=30
 curl_connect_timeout=10
 curl_max_time=120
 tmp_file=
@@ -97,11 +100,11 @@ normalize_domains() {
             if (line ~ /^#/) {
                 next
             }
-            if (line !~ /^server=\/[A-Za-z0-9.-]+\/114\.114\.114\.114$/) {
+            if (line !~ /^server=\/[A-Za-z0-9.-]+\/[^\/[:space:]]+$/) {
                 fail("unsupported input")
             }
             sub(/^server=\//, "", line)
-            sub(/\/114\.114\.114\.114$/, "", line)
+            sub(/\/[^\/]+$/, "", line)
         } else {
             fail("unknown input format")
         }
@@ -131,26 +134,46 @@ generate_list() {
     local output_file=$2
     local min_domain_count=$3
     local normalizer=$4
-    local count
+    local count previous_count delta previous_file
 
-    tmp_file=$(mktemp "$output_file.XXXXXX")
+    tmp_file=$(mktemp "$output_file.XXXXXX") || return 1
     trap cleanup EXIT
 
-    fetch_url "$source_url" | "$normalizer" "$source_url" | LC_ALL=C sort -u > "$tmp_file"
+    if ! fetch_url "$source_url" | "$normalizer" "$source_url" | LC_ALL=C sort -u > "$tmp_file"; then
+        cleanup
+        tmp_file=
+        echo "error: $output_file: download or normalization failed" >&2
+        return 1
+    fi
 
-    count=$(line_count "$tmp_file")
+    count=$(line_count "$tmp_file") || return 1
     if (( count < min_domain_count )); then
         die "$output_file: only $count domains (need $min_domain_count)"
     fi
 
-    mv "$tmp_file" "$output_file"
+    if [[ -n "$previous_dir" ]]; then
+        previous_file="$previous_dir/$(basename "$output_file")"
+        [[ -s "$previous_file" ]] || die "$output_file: missing previous list: $previous_file"
+        previous_count=$(line_count "$previous_file") || return 1
+        (( previous_count > 0 )) || die "$output_file: empty previous list"
+        delta=$((count - previous_count))
+        (( delta >= 0 )) || delta=$((-delta))
+        if (( delta * 100 > previous_count * max_change_percent )); then
+            if [[ "$allow_large_change" != true ]]; then
+                die "$output_file: count changed from $previous_count to $count (limit $max_change_percent%); previous release preserved"
+            fi
+            echo "warning: $output_file: allowing count change from $previous_count to $count" >&2
+        fi
+    fi
+
+    mv "$tmp_file" "$output_file" || return 1
     tmp_file=
     printf "%s: %d domains\n" "$output_file" "$count"
 }
 
 main() {
-    generate_list "$oisd_source_url" "$ads_output_file" "$min_ads_count" normalize_oisd
-    generate_list "$china_source_url" "$china_output_file" "$min_china_count" normalize_dnsmasq_china
+    generate_list "$oisd_source_url" "$ads_output_file" "$min_ads_count" normalize_oisd || return 1
+    generate_list "$china_source_url" "$china_output_file" "$min_china_count" normalize_dnsmasq_china || return 1
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

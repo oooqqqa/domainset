@@ -71,13 +71,13 @@ diff -u "$expected_file" "$stdout_file"
 
 if normalize_dnsmasq_china "bad-china-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
 server=/valid.example/114.114.114.114
-server=/example.org/8.8.8.8
+address=/example.org/8.8.8.8
 EOF
 then
     echo "error: unsupported dnsmasq input should fail" >&2
     exit 1
 fi
-grep -F "error: bad-china-source: line 2: unsupported input: server=/example.org/8.8.8.8" "$stderr_file" >/dev/null
+grep -F "error: bad-china-source: line 2: unsupported input: address=/example.org/8.8.8.8" "$stderr_file" >/dev/null
 
 if normalize_dnsmasq_china "bad-china-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
 server=/bad..example/114.114.114.114
