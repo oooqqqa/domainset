@@ -8,9 +8,14 @@ on:
   schedule:
     - cron: '11 6 * * *'
   workflow_dispatch:
+    inputs:
+      allow_large_change:
+        description: Allow a count change over 30% after reviewing the upstream lists
+        type: boolean
+        default: false
 
 concurrency:
-  group: update-ads
+  group: update-domainsets
   cancel-in-progress: false
 
 permissions:
@@ -20,19 +25,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Run tests
+      - uses: actions/checkout@v5
+      - name: Run checks
         shell: bash
         run: |
           set -euo pipefail
-          shellcheck ./domainset-generator.sh ./tests/normalize.bash
+          shellcheck ./domainset-generator.sh ./tests/*.bash ./scripts/*.bash
           bash ./tests/normalize.bash
+          bash ./tests/reliability.bash
 
   update:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -44,13 +45,24 @@ jobs:
     env:
       RELEASE_TAG: latest
       RELEASE_TITLE: domainset
-
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ALLOW_LARGE_CHANGE: ${{ inputs.allow_large_change == true && 'true' || 'false' }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
+      - uses: actions/checkout@v5
+      - name: Download previous successful lists
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A failed API call must not be mistaken for a first release.
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name' > release-tags.txt
+          if grep -Fxq "$RELEASE_TAG" release-tags.txt; then
+            previous_dir="$RUNNER_TEMP/domainset-previous"
+            mkdir -p "$previous_dir"
+            gh release download "$RELEASE_TAG" --pattern ads.txt --pattern china.txt --dir "$previous_dir"
+            echo "PREVIOUS_DIR=$previous_dir" >> "$GITHUB_ENV"
+          else
+            echo 'No previous release; using minimum count checks for the first publication.'
+          fi
       - name: Generate domain sets
         shell: bash
         run: |
@@ -62,33 +74,29 @@ jobs:
             echo "warning: attempt $attempt/3 failed"
             sleep 10
           done
-          echo "error: all attempts failed" >&2
+          echo 'error: all attempts failed; release unchanged' >&2
           exit 1
-
+      - name: Build release metadata
+        shell: bash
+        run: bash ./scripts/release-metadata.bash
       - name: Publish domain sets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-
-          notes=$'Generated domain-set files from:\n- https://big.oisd.nl\n- https://github.com/felixonmars/dnsmasq-china-list/blob/master/accelerated-domains.china.conf'
-
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" ads.txt china.txt --clobber
+          if grep -Fxq "$RELEASE_TAG" release-tags.txt; then
+            gh release upload "$RELEASE_TAG" ads.txt china.txt SHA256SUMS manifest.json --clobber
             git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
             git push origin "refs/tags/$RELEASE_TAG" --force
-            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes "$notes"
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release-notes.md
           else
             git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
             git push origin "refs/tags/$RELEASE_TAG" --force
-            gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes "$notes" --latest=false
-            gh release upload "$RELEASE_TAG" ads.txt china.txt --clobber
+            gh release create "$RELEASE_TAG" ads.txt china.txt SHA256SUMS manifest.json --title "$RELEASE_TITLE" --notes-file release-notes.md --latest=false
           fi
-
-          mapfile -t assets < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
-          for asset in "${assets[@]}"; do
-            if [[ "$asset" != "ads.txt" && "$asset" != "china.txt" ]]; then
-              gh release delete-asset "$RELEASE_TAG" "$asset" --yes
-            fi
-          done
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' > release-assets.txt
+          while IFS= read -r asset; do
+            case "$asset" in
+              ads.txt|china.txt|SHA256SUMS|manifest.json) ;;
+              *) gh release delete-asset "$RELEASE_TAG" "$asset" --yes ;;
+            esac
+          done < release-assets.txt
