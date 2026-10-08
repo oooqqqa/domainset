@@ -30,7 +30,7 @@ jq -n \
               "china.txt": {source: $china_source, lines: $china_count, sha256: $china_hash}}}' \
     > manifest.json
 {
-    printf 'Generated at: %s (UTC)\n\nCommit: `%s`\n\n' "$generated_at" "$commit"
+    printf 'Generated at: %s (UTC)\n\nCommit: %s\n\n' "$generated_at" "$commit"
     printf '| File | Purpose | Entries | Source |\n| --- | --- | ---: | --- |\n'
     printf '| ads.txt | Domain blocking | %s | %s |\n' "$ads_count" "$oisd_source_url"
     printf '| china.txt | DNS routing to a Chinese resolver | %s | %s |\n\n' "$china_count" "$china_source_url"
