@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Mocks replace functions that the sourced generator calls.
+# shellcheck disable=SC2329
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -101,6 +103,7 @@ EOF
 
 (
     cd "$main_dir"
+    umask 022
     source "$repo_root/domainset-generator.sh"
     oisd_source_url=mock://oisd
     china_source_url=mock://china
@@ -141,6 +144,9 @@ diff -u "$tmpdir/expected-china" "$main_dir/china.txt"
 grep -F "ads.txt: 2 domains" "$stdout_file" >/dev/null
 grep -F "china.txt: 3 domains" "$stdout_file" >/dev/null
 [[ ! -s "$stderr_file" ]]
+[[ "$(ls -A "$main_dir")" == $'ads.txt\nchina.txt' ]]
+# Outputs follow the umask instead of mktemp's private 0600 mode.
+[[ "$(ls -l "$main_dir/ads.txt")" == -rw-r--r--* ]]
 
 mkdir "$fail_dir"
 if (
@@ -162,9 +168,6 @@ then
     exit 1
 fi
 grep -F "error: ads.txt: only 1 domains (need 2)" "$stderr_file" >/dev/null
-[[ ! -e "$fail_dir/ads.txt" ]]
-shopt -s nullglob
-leftovers=("$fail_dir"/ads.txt.*)
-(( ${#leftovers[@]} == 0 ))
+[[ -z "$(ls -A "$fail_dir")" ]]
 
 printf 'normalize tests passed\n'

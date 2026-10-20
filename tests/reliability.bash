@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Mocks replace functions that the sourced generator calls.
+# shellcheck disable=SC2329
 set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 task_tmp=$(mktemp -d)
@@ -25,11 +27,35 @@ for mode in parse fetch; do
             exit 1
         fi
         [[ "$(cat ads.txt)" == '.old.example' ]]
-        shopt -s nullglob
-        leftovers=(ads.txt.*)
-        (( ${#leftovers[@]} == 0 ))
     ) > "$task_tmp/$mode.log" 2>&1
+    [[ "$(ls -A "$task_tmp/$mode")" == ads.txt ]]
 done
+
+# A failed list must not leave the other list updated.
+mkdir "$task_tmp/partial"
+if (
+    cd "$task_tmp/partial"
+    source "$repo_root/domainset-generator.sh"
+    printf '.old.example\n' > ads.txt
+    printf '.old.cn\n' > china.txt
+    min_ads_count=1
+    min_china_count=1
+    fetch_url() {
+        if [[ "$1" == "$oisd_source_url" ]]; then
+            printf '||new.example^\n'
+        else
+            printf 'invalid-input\n'
+        fi
+    }
+    main
+) > "$task_tmp/partial.log" 2>&1
+then
+    echo 'error: partial update accepted' >&2
+    exit 1
+fi
+[[ "$(cat "$task_tmp/partial/ads.txt")" == '.old.example' ]]
+[[ "$(cat "$task_tmp/partial/china.txt")" == '.old.cn' ]]
+[[ "$(ls -A "$task_tmp/partial")" == $'ads.txt\nchina.txt' ]]
 
 run_change_case() {
     local name=$1 count=$2 expected=$3 allow=${4:-false} minimum=${5:-1}
@@ -50,6 +76,7 @@ run_change_case() {
             for (( i=1; i <= fixture_count; i++ )); do printf "||new%s.example^\n" "$i"; done
         }
         generate_list mock://source ads.txt "$4" normalize_oisd
+        install_lists
     ' _ "$task_tmp/$name" "$count" "$allow" "$minimum" > "$task_tmp/$name.log" 2>&1; then
         [[ "$expected" == pass ]] || { cat "$task_tmp/$name.log"; return 1; }
         [[ "$(wc -l < "$task_tmp/$name/ads.txt")" -eq "$count" ]]
@@ -57,9 +84,7 @@ run_change_case() {
         [[ "$expected" == fail ]] || { cat "$task_tmp/$name.log"; return 1; }
         [[ "$(cat "$task_tmp/$name/ads.txt")" == '.original.example' ]]
     fi
-    shopt -s nullglob
-    local leftovers=("$task_tmp/$name"/ads.txt.*)
-    (( ${#leftovers[@]} == 0 ))
+    [[ "$(ls -A "$task_tmp/$name")" == $'ads.txt\nprevious' ]]
 }
 run_change_case decrease 6 fail
 run_change_case increase 14 fail

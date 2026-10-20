@@ -26,6 +26,7 @@ bash ./domainset-generator.sh
 ```
 
 输出到**当前工作目录**的 `ads.txt`、`china.txt`，按字典序排序并去重。
+两份列表都通过校验后才一起替换；任一失败时保留原有文件。
 依赖 Bash、curl、awk、sort、mktemp、wc。发布元数据另外需要 jq 和 SHA256 工具。
 
 下载、解析失败或任一列表少于 50,000 条时，自动任务不发布。
