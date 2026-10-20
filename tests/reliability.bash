@@ -15,9 +15,9 @@ for mode in parse fetch; do
         source "$repo_root/domainset-generator.sh"
         printf '.old.example\n' > ads.txt
         fetch_url() {
-            printf '||valid.example^\n'
+            printf '||valid.example^\n' > "$2"
             if [[ "$mode" == parse ]]; then
-                printf 'invalid-input\n'
+                printf 'invalid-input\n' >> "$2"
             else
                 return 1
             fi
@@ -42,9 +42,9 @@ if (
     min_china_count=1
     fetch_url() {
         if [[ "$1" == "$oisd_source_url" ]]; then
-            printf '||new.example^\n'
+            printf '||new.example^\n' > "$2"
         else
-            printf 'invalid-input\n'
+            printf 'invalid-input\n' > "$2"
         fi
     }
     main
@@ -69,11 +69,11 @@ run_change_case() {
         printf ".original.example\n" > ads.txt
         previous_dir=previous
         allow_large_change=$3
-        # Capture fixture size in a global; fetch_url gets the source URL as $1.
+        # Capture fixture size in a global; fetch_url gets the URL and output file as $1 and $2.
         fixture_count=$2
         fetch_url() {
             local i
-            for (( i=1; i <= fixture_count; i++ )); do printf "||new%s.example^\n" "$i"; done
+            for (( i=1; i <= fixture_count; i++ )); do printf "||new%s.example^\n" "$i"; done > "$2"
         }
         generate_list mock://source ads.txt "$4" normalize_oisd
         install_lists

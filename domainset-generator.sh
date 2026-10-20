@@ -12,6 +12,8 @@ allow_large_change=${ALLOW_LARGE_CHANGE:-false}
 max_change_percent=30
 curl_connect_timeout=10
 curl_max_time=120
+curl_retry_count=2
+curl_retry_delay=10
 work_dir=
 staged_files=()
 
@@ -34,6 +36,7 @@ line_count() {
 
 fetch_url() {
     local url=$1
+    local output_file=$2
 
     curl \
         --fail \
@@ -42,6 +45,10 @@ fetch_url() {
         --location \
         --connect-timeout "$curl_connect_timeout" \
         --max-time "$curl_max_time" \
+        --retry "$curl_retry_count" \
+        --retry-delay "$curl_retry_delay" \
+        --retry-all-errors \
+        --output "$output_file" \
         "$url"
 }
 
@@ -135,7 +142,7 @@ generate_list() {
     local output_file=$2
     local min_domain_count=$3
     local normalizer=$4
-    local count previous_count delta previous_file staged_file
+    local count previous_count delta previous_file staged_file source_file
 
     if [[ -z "$work_dir" ]]; then
         # Stage next to the outputs so install_lists renames within one filesystem.
@@ -143,9 +150,16 @@ generate_list() {
         trap cleanup EXIT
     fi
     staged_file="$work_dir/$(basename "$output_file")"
+    source_file="$staged_file.source"
 
-    if ! fetch_url "$source_url" | "$normalizer" "$source_url" | LC_ALL=C sort -u > "$staged_file"; then
-        echo "error: $output_file: download or normalization failed" >&2
+    # Download to a file: curl truncates it before a retry, unlike a pipe.
+    if ! fetch_url "$source_url" "$source_file"; then
+        echo "error: $output_file: download failed" >&2
+        return 1
+    fi
+
+    if ! "$normalizer" "$source_url" < "$source_file" | LC_ALL=C sort -u > "$staged_file"; then
+        echo "error: $output_file: normalization failed" >&2
         return 1
     fi
 

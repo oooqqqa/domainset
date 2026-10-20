@@ -38,7 +38,7 @@ jobs:
   update:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     needs: test
     permissions:
       contents: write
@@ -65,17 +65,8 @@ jobs:
           fi
       - name: Generate domain sets
         shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3; do
-            if bash ./domainset-generator.sh; then
-              exit 0
-            fi
-            echo "warning: attempt $attempt/3 failed"
-            sleep 10
-          done
-          echo 'error: all attempts failed; release unchanged' >&2
-          exit 1
+        # Downloads retry inside curl; validation failures are deterministic.
+        run: bash ./domainset-generator.sh
       - name: Build release metadata
         shell: bash
         run: bash ./scripts/release-metadata.bash

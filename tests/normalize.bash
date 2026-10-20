@@ -115,7 +115,7 @@ EOF
     fetch_url() {
         case "$1" in
             mock://oisd)
-                cat <<'EOF'
+                cat > "$2" <<'EOF'
 [Adblock Plus]
 ||b.example^
 ||a.example^
@@ -123,7 +123,7 @@ EOF
 EOF
                 ;;
             mock://china)
-                cat <<'EOF'
+                cat > "$2" <<'EOF'
 # comment
 server=/cn/114.114.114.114
 server=/example.cn/114.114.114.114
@@ -155,7 +155,7 @@ if (
     output_file=ads.txt
 
     fetch_url() {
-        cat <<'EOF'
+        cat > "$2" <<'EOF'
 [Adblock Plus]
 ||only.example^
 EOF
