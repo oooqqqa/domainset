@@ -12,11 +12,12 @@ allow_large_change=${ALLOW_LARGE_CHANGE:-false}
 max_change_percent=30
 curl_connect_timeout=10
 curl_max_time=120
-tmp_file=
+work_dir=
+staged_files=()
 
 cleanup() {
-    if [[ -n "${tmp_file:-}" ]]; then
-        rm -f "$tmp_file"
+    if [[ -n "${work_dir:-}" ]]; then
+        rm -rf "$work_dir"
     fi
 }
 
@@ -134,19 +135,21 @@ generate_list() {
     local output_file=$2
     local min_domain_count=$3
     local normalizer=$4
-    local count previous_count delta previous_file
+    local count previous_count delta previous_file staged_file
 
-    tmp_file=$(mktemp "$output_file.XXXXXX") || return 1
-    trap cleanup EXIT
+    if [[ -z "$work_dir" ]]; then
+        # Stage next to the outputs so install_lists renames within one filesystem.
+        work_dir=$(mktemp -d "$(dirname "$output_file")/.domainset.XXXXXX") || return 1
+        trap cleanup EXIT
+    fi
+    staged_file="$work_dir/$(basename "$output_file")"
 
-    if ! fetch_url "$source_url" | "$normalizer" "$source_url" | LC_ALL=C sort -u > "$tmp_file"; then
-        cleanup
-        tmp_file=
+    if ! fetch_url "$source_url" | "$normalizer" "$source_url" | LC_ALL=C sort -u > "$staged_file"; then
         echo "error: $output_file: download or normalization failed" >&2
         return 1
     fi
 
-    count=$(line_count "$tmp_file") || return 1
+    count=$(line_count "$staged_file") || return 1
     if (( count < min_domain_count )); then
         die "$output_file: only $count domains (need $min_domain_count)"
     fi
@@ -166,14 +169,23 @@ generate_list() {
         fi
     fi
 
-    mv "$tmp_file" "$output_file" || return 1
-    tmp_file=
-    printf "%s: %d domains\n" "$output_file" "$count"
+    staged_files+=("$output_file")
+}
+
+install_lists() {
+    local output_file
+
+    for output_file in "${staged_files[@]}"; do
+        mv "$work_dir/$(basename "$output_file")" "$output_file" || return 1
+        printf "%s: %d domains\n" "$output_file" "$(line_count "$output_file")"
+    done
+    staged_files=()
 }
 
 main() {
     generate_list "$oisd_source_url" "$ads_output_file" "$min_ads_count" normalize_oisd || return 1
     generate_list "$china_source_url" "$china_output_file" "$min_china_count" normalize_dnsmasq_china || return 1
+    install_lists
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
