@@ -21,7 +21,6 @@ ads_hash=$(hash_file ads.txt)
 china_hash=$(hash_file china.txt)
 apple_china_hash=$(hash_file apple-china.txt)
 
-printf '%s  ads.txt\n%s  china.txt\n%s  apple-china.txt\n' "$ads_hash" "$china_hash" "$apple_china_hash" > SHA256SUMS
 jq -n \
     --arg generated_at "$generated_at" --arg commit "$commit" \
     --arg ads_source "$oisd_source_url" --arg china_source "$china_source_url" \
@@ -41,5 +40,5 @@ jq -n \
     printf '| china.txt | DNS routing to a Chinese resolver | %s | %s |\n' "$china_count" "$china_source_url"
     printf '| apple-china.txt | Apple DNS routing to a Chinese resolver | %s | %s |\n\n' "$apple_china_count" "$apple_china_source_url"
     printf '%s\n' 'china.txt and apple-china.txt are DNS acceleration lists, not a guarantee that every matching destination should use DIRECT.'
-    printf '\n%s\n' 'SHA256SUMS verifies the three lists; manifest.json records their sources, counts, checksums and generator commit.'
+    printf '\n%s\n' 'manifest.json records the sources, counts, SHA256 checksums and generator commit.'
 } > release-notes.md

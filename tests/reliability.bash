@@ -92,11 +92,8 @@ diff -u "$task_tmp/expected" "$task_tmp/resolvers"
         and (.files | length) == 3
         and .files["apple-china.txt"].lines == 1
         and (.files["apple-china.txt"].source | endswith("/apple.china.conf"))' manifest.json >/dev/null
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum -c SHA256SUMS
-    else
-        shasum -a 256 -c SHA256SUMS
-    fi
+    china_hash=$(shasum -a 256 china.txt 2>/dev/null || sha256sum china.txt)
+    [[ "$(jq -r '.files["china.txt"].sha256' manifest.json)" == "${china_hash%% *}" ]]
     grep -F 'DNS routing' release-notes.md >/dev/null
 ) > "$task_tmp/metadata.log"
 printf 'reliability tests passed\n'

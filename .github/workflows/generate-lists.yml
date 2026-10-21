@@ -43,12 +43,6 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
-      - name: Check for an existing release
-        shell: bash
-        run: |
-          set -euo pipefail
-          # A failed API call must not be mistaken for a first release.
-          gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name' > release-tags.txt
       - name: Generate domain sets
         shell: bash
         # Downloads retry inside curl; validation failures are deterministic.
@@ -60,20 +54,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -Fxq "$RELEASE_TAG" release-tags.txt; then
-            gh release upload "$RELEASE_TAG" ads.txt china.txt apple-china.txt SHA256SUMS manifest.json --clobber
-            git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
-            git push origin "refs/tags/$RELEASE_TAG" --force
-            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release-notes.md
-          else
-            git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
-            git push origin "refs/tags/$RELEASE_TAG" --force
-            gh release create "$RELEASE_TAG" ads.txt china.txt apple-china.txt SHA256SUMS manifest.json --title "$RELEASE_TITLE" --notes-file release-notes.md --latest=false
-          fi
+          # The release already exists; upload fails loudly if it was deleted.
+          gh release upload "$RELEASE_TAG" ads.txt china.txt apple-china.txt manifest.json --clobber
+          git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$RELEASE_TAG" --force
+          gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release-notes.md
           gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' > release-assets.txt
           while IFS= read -r asset; do
             case "$asset" in
-              ads.txt|china.txt|apple-china.txt|SHA256SUMS|manifest.json) ;;
+              ads.txt|china.txt|apple-china.txt|manifest.json) ;;
               *) gh release delete-asset "$RELEASE_TAG" "$asset" --yes ;;
             esac
           done < release-assets.txt
