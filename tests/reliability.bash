@@ -6,36 +6,13 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 task_tmp=$(mktemp -d)
 trap 'rm -rf "$task_tmp"' EXIT
 
-# A conditional function call must propagate both parser and fetch failures.
-for mode in parse fetch; do
-    mkdir "$task_tmp/$mode"
-    (
-        cd "$task_tmp/$mode"
-        source "$repo_root/domainset-generator.sh"
-        printf '.old.example\n' > ads.txt
-        fetch_url() {
-            printf '||valid.example^\n' > "$2"
-            if [[ "$mode" == parse ]]; then
-                printf 'invalid-input\n' >> "$2"
-            else
-                return 1
-            fi
-        }
-        # set -e is off inside the condition, so only die can stop the subshell.
-        if (generate_list mock://source ads.txt 1 oisd); then
-            echo 'error: failed pipeline accepted' >&2
-            exit 1
-        fi
-        [[ "$(cat ads.txt)" == '.old.example' ]]
-    ) > "$task_tmp/$mode.log" 2>&1
-    [[ "$(ls -A "$task_tmp/$mode")" == ads.txt ]]
-done
-
-# Failure in either dnsmasq list must preserve all existing outputs.
-for failed_source in china apple; do
-    mkdir "$task_tmp/partial-$failed_source"
+# A download or parse failure in any list must preserve every existing output.
+# set -e is off inside the `if` condition, so this also checks that failures exit via die.
+for mode in fetch parse; do
+    dir="$task_tmp/$mode"
+    mkdir "$dir"
     if (
-        cd "$task_tmp/partial-$failed_source"
+        cd "$dir"
         source "$repo_root/domainset-generator.sh"
         printf '.old.example\n' > ads.txt
         printf '.old.cn\n' > china.txt
@@ -46,39 +23,28 @@ for failed_source in china apple; do
         fetch_url() {
             case "$1" in
                 "$oisd_source_url") printf '||new.example^\n' > "$2" ;;
+                # Valid lines come first so the minimum count cannot mask a missed failure.
                 "$china_source_url")
-                    if [[ "$failed_source" == china ]]; then
-                        printf 'invalid-input\n' > "$2"
-                    else
-                        printf 'server=/new.cn/114.114.114.114\n' > "$2"
-                    fi
+                    printf 'server=/new.cn/114.114.114.114\n' > "$2"
+                    [[ "$mode" != fetch ]] || return 1
                     ;;
-                "$apple_china_source_url") printf 'invalid-input\n' > "$2" ;;
-                *) return 1 ;;
+                "$apple_china_source_url")
+                    printf 'server=/new.apple.cn/1.1.1.1\n' > "$2"
+                    [[ "$mode" != parse ]] || printf 'invalid-input\n' >> "$2"
+                    ;;
             esac
         }
         main
-    ) > "$task_tmp/partial-$failed_source.log" 2>&1
+    ) > "$dir.log" 2>&1
     then
-        echo 'error: partial update accepted' >&2
+        echo "error: $mode failure accepted" >&2
         exit 1
     fi
-    [[ "$(cat "$task_tmp/partial-$failed_source/ads.txt")" == '.old.example' ]]
-    [[ "$(cat "$task_tmp/partial-$failed_source/china.txt")" == '.old.cn' ]]
-    [[ "$(cat "$task_tmp/partial-$failed_source/apple-china.txt")" == '.old.apple.cn' ]]
-    [[ "$(ls -A "$task_tmp/partial-$failed_source")" == $'ads.txt\napple-china.txt\nchina.txt' ]]
+    [[ "$(cat "$dir/ads.txt")" == '.old.example' ]]
+    [[ "$(cat "$dir/china.txt")" == '.old.cn' ]]
+    [[ "$(cat "$dir/apple-china.txt")" == '.old.apple.cn' ]]
+    [[ "$(ls -A "$dir")" == $'ads.txt\napple-china.txt\nchina.txt' ]]
 done
-
-# Upstream resolver changes do not alter the domain list.
-(
-    source "$repo_root/domainset-generator.sh"
-    normalize_domains dnsmasq-china test <<'EOF'
-server=/example.cn/8.8.8.8
-server=/example.net/2001:db8::1
-EOF
-) > "$task_tmp/resolvers"
-printf '.example.cn\n.example.net\n' > "$task_tmp/expected"
-diff -u "$task_tmp/expected" "$task_tmp/resolvers"
 
 (
     cd "$task_tmp"

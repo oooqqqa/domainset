@@ -57,8 +57,11 @@ cat > "$expected_file" <<'EOF'
 .cn
 .example.cn
 .mixed-case.example
+.resolver-v4.example
+.resolver-v6.example
 EOF
 
+# The resolver address is discarded whatever its form.
 normalize_domains dnsmasq-china "china-test-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
 # comment
 
@@ -66,6 +69,8 @@ server=/0.zone/114.114.114.114
 server=/cn/114.114.114.114
 server=/example.cn/114.114.114.114
 server=/Mixed-Case.Example/114.114.114.114
+server=/resolver-v4.example/8.8.8.8
+server=/resolver-v6.example/2001:db8::1
 EOF
 
 diff -u "$expected_file" "$stdout_file"
