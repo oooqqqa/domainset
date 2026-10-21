@@ -111,6 +111,8 @@ EOF
     china_output_file=china.txt
     min_ads_count=2
     min_china_count=3
+    min_apple_china_count=2
+    apple_china_source_url=mock://apple-china
 
     fetch_url() {
         case "$1" in
@@ -120,6 +122,14 @@ EOF
 ||b.example^
 ||a.example^
 ||b.example^
+EOF
+                ;;
+            mock://apple-china)
+                cat > "$2" <<'EOF'
+# Apple China
+server=/itunes.apple.com/114.114.114.114
+server=/APPLE.COM.CN/114.114.114.114
+server=/itunes.apple.com/114.114.114.114
 EOF
                 ;;
             mock://china)
@@ -139,12 +149,15 @@ EOF
     main
 ) > "$stdout_file" 2> "$stderr_file"
 
+printf '.apple.com.cn\n.itunes.apple.com\n' > "$tmpdir/expected-apple-china"
+diff -u "$tmpdir/expected-apple-china" "$main_dir/apple-china.txt"
 diff -u "$tmpdir/expected-ads" "$main_dir/ads.txt"
 diff -u "$tmpdir/expected-china" "$main_dir/china.txt"
 grep -F "ads.txt: 2 domains" "$stdout_file" >/dev/null
 grep -F "china.txt: 3 domains" "$stdout_file" >/dev/null
+grep -F "apple-china.txt: 2 domains" "$stdout_file" >/dev/null
 [[ ! -s "$stderr_file" ]]
-[[ "$(ls -A "$main_dir")" == $'ads.txt\nchina.txt' ]]
+[[ "$(ls -A "$main_dir")" == $'ads.txt\napple-china.txt\nchina.txt' ]]
 # Outputs follow the umask instead of mktemp's private 0600 mode.
 [[ "$(ls -l "$main_dir/ads.txt")" == -rw-r--r--* ]]
 

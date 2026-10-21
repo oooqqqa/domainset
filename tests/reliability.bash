@@ -31,31 +31,73 @@ for mode in parse fetch; do
     [[ "$(ls -A "$task_tmp/$mode")" == ads.txt ]]
 done
 
-# A failed list must not leave the other list updated.
-mkdir "$task_tmp/partial"
-if (
-    cd "$task_tmp/partial"
-    source "$repo_root/domainset-generator.sh"
-    printf '.old.example\n' > ads.txt
-    printf '.old.cn\n' > china.txt
-    min_ads_count=1
-    min_china_count=1
-    fetch_url() {
-        if [[ "$1" == "$oisd_source_url" ]]; then
-            printf '||new.example^\n' > "$2"
-        else
-            printf 'invalid-input\n' > "$2"
-        fi
-    }
-    main
-) > "$task_tmp/partial.log" 2>&1
-then
-    echo 'error: partial update accepted' >&2
-    exit 1
-fi
-[[ "$(cat "$task_tmp/partial/ads.txt")" == '.old.example' ]]
-[[ "$(cat "$task_tmp/partial/china.txt")" == '.old.cn' ]]
-[[ "$(ls -A "$task_tmp/partial")" == $'ads.txt\nchina.txt' ]]
+# Failure in either dnsmasq list must preserve all existing outputs.
+for failed_source in china apple; do
+    mkdir "$task_tmp/partial-$failed_source"
+    if (
+        cd "$task_tmp/partial-$failed_source"
+        source "$repo_root/domainset-generator.sh"
+        printf '.old.example\n' > ads.txt
+        printf '.old.cn\n' > china.txt
+        printf '.old.apple.cn\n' > apple-china.txt
+        min_ads_count=1
+        min_china_count=1
+        min_apple_china_count=1
+        fetch_url() {
+            case "$1" in
+                "$oisd_source_url") printf '||new.example^\n' > "$2" ;;
+                "$china_source_url")
+                    if [[ "$failed_source" == china ]]; then
+                        printf 'invalid-input\n' > "$2"
+                    else
+                        printf 'server=/new.cn/114.114.114.114\n' > "$2"
+                    fi
+                    ;;
+                "$apple_china_source_url") printf 'invalid-input\n' > "$2" ;;
+                *) return 1 ;;
+            esac
+        }
+        main
+    ) > "$task_tmp/partial-$failed_source.log" 2>&1
+    then
+        echo 'error: partial update accepted' >&2
+        exit 1
+    fi
+    [[ "$(cat "$task_tmp/partial-$failed_source/ads.txt")" == '.old.example' ]]
+    [[ "$(cat "$task_tmp/partial-$failed_source/china.txt")" == '.old.cn' ]]
+    [[ "$(cat "$task_tmp/partial-$failed_source/apple-china.txt")" == '.old.apple.cn' ]]
+    [[ "$(ls -A "$task_tmp/partial-$failed_source")" == $'ads.txt\napple-china.txt\nchina.txt' ]]
+done
+
+# Only an absent Apple baseline is allowed for migration; existing baselines
+# still enforce nonempty content and the count-change limit.
+for baseline in absent present empty changed; do
+    mkdir "$task_tmp/apple-$baseline"
+    if (
+        cd "$task_tmp/apple-$baseline"
+        source "$repo_root/domainset-generator.sh"
+        mkdir previous
+        previous_dir=previous
+        printf '.original.apple.cn\n' > apple-china.txt
+        case "$baseline" in
+            present) printf '.old.apple.cn\n' > previous/apple-china.txt ;;
+            empty) : > previous/apple-china.txt ;;
+            changed) printf '.old.apple.cn\n.old2.apple.cn\n' > previous/apple-china.txt ;;
+        esac
+        fetch_url() {
+            printf 'server=/apple.com.cn/114.114.114.114\n' > "$2"
+        }
+        generate_list "$apple_china_source_url" apple-china.txt 1 normalize_dnsmasq_china true
+        install_lists
+    ) > "$task_tmp/apple-$baseline.log" 2>&1; then
+        [[ "$baseline" == absent || "$baseline" == present ]]
+        [[ "$(cat "$task_tmp/apple-$baseline/apple-china.txt")" == '.apple.com.cn' ]]
+    else
+        [[ "$baseline" == empty || "$baseline" == changed ]]
+        [[ "$(cat "$task_tmp/apple-$baseline/apple-china.txt")" == '.original.apple.cn' ]]
+    fi
+    [[ "$(ls -A "$task_tmp/apple-$baseline")" == $'apple-china.txt\nprevious' ]]
+done
 
 run_change_case() {
     local name=$1 count=$2 expected=$3 allow=${4:-false} minimum=${5:-1}
@@ -108,10 +150,14 @@ diff -u "$task_tmp/expected" "$task_tmp/resolvers"
     cd "$task_tmp"
     printf '.ads.example\n' > ads.txt
     printf '.cn\n.china.example\n' > china.txt
+    printf '.apple.com.cn\n' > apple-china.txt
     GITHUB_SHA=test-commit bash "$repo_root/scripts/release-metadata.bash"
     jq -e '.commit == "test-commit" and .files["ads.txt"].lines == 1
         and .files["china.txt"].lines == 2 and .generated_at != ""
-        and .files["china.txt"].source != ""' manifest.json >/dev/null
+        and .files["china.txt"].source != ""
+        and (.files | length) == 3
+        and .files["apple-china.txt"].lines == 1
+        and (.files["apple-china.txt"].source | endswith("/apple.china.conf"))' manifest.json >/dev/null
     if command -v sha256sum >/dev/null 2>&1; then
         sha256sum -c SHA256SUMS
     else

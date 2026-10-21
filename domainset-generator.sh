@@ -3,10 +3,13 @@ set -euo pipefail
 
 oisd_source_url=https://big.oisd.nl
 china_source_url=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/accelerated-domains.china.conf
+apple_china_source_url=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/apple.china.conf
 ads_output_file=ads.txt
 china_output_file=china.txt
+apple_china_output_file=apple-china.txt
 min_ads_count=50000
 min_china_count=50000
+min_apple_china_count=100
 previous_dir=${PREVIOUS_DIR:-}
 allow_large_change=${ALLOW_LARGE_CHANGE:-false}
 max_change_percent=30
@@ -142,6 +145,7 @@ generate_list() {
     local output_file=$2
     local min_domain_count=$3
     local normalizer=$4
+    local allow_missing_previous=${5:-false}
     local count previous_count delta previous_file staged_file source_file
 
     if [[ -z "$work_dir" ]]; then
@@ -170,16 +174,21 @@ generate_list() {
 
     if [[ -n "$previous_dir" ]]; then
         previous_file="$previous_dir/$(basename "$output_file")"
-        [[ -s "$previous_file" ]] || die "$output_file: missing previous list: $previous_file"
-        previous_count=$(line_count "$previous_file") || return 1
-        (( previous_count > 0 )) || die "$output_file: empty previous list"
-        delta=$((count - previous_count))
-        (( delta >= 0 )) || delta=$((-delta))
-        if (( delta * 100 > previous_count * max_change_percent )); then
-            if [[ "$allow_large_change" != true ]]; then
-                die "$output_file: count changed from $previous_count to $count (limit $max_change_percent%); previous release preserved"
+        # A newly introduced list has no baseline in older releases.
+        if [[ "$allow_missing_previous" == true && ! -e "$previous_file" ]]; then
+            echo "$output_file: no previous list; using minimum count check"
+        else
+            [[ -s "$previous_file" ]] || die "$output_file: missing previous list: $previous_file"
+            previous_count=$(line_count "$previous_file") || return 1
+            (( previous_count > 0 )) || die "$output_file: empty previous list"
+            delta=$((count - previous_count))
+            (( delta >= 0 )) || delta=$((-delta))
+            if (( delta * 100 > previous_count * max_change_percent )); then
+                if [[ "$allow_large_change" != true ]]; then
+                    die "$output_file: count changed from $previous_count to $count (limit $max_change_percent%); previous release preserved"
+                fi
+                echo "warning: $output_file: allowing count change from $previous_count to $count" >&2
             fi
-            echo "warning: $output_file: allowing count change from $previous_count to $count" >&2
         fi
     fi
 
@@ -199,6 +208,7 @@ install_lists() {
 main() {
     generate_list "$oisd_source_url" "$ads_output_file" "$min_ads_count" normalize_oisd || return 1
     generate_list "$china_source_url" "$china_output_file" "$min_china_count" normalize_dnsmasq_china || return 1
+    generate_list "$apple_china_source_url" "$apple_china_output_file" "$min_apple_china_count" normalize_dnsmasq_china true || return 1
     install_lists
 }
 
