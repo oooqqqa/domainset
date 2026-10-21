@@ -21,7 +21,8 @@ for mode in parse fetch; do
                 return 1
             fi
         }
-        if generate_list mock://source ads.txt 1 normalize_oisd; then
+        # set -e is off inside the condition, so only die can stop the subshell.
+        if (generate_list mock://source ads.txt 1 oisd); then
             echo 'error: failed pipeline accepted' >&2
             exit 1
         fi
@@ -71,7 +72,7 @@ done
 # Upstream resolver changes do not alter the domain list.
 (
     source "$repo_root/domainset-generator.sh"
-    normalize_dnsmasq_china test <<'EOF'
+    normalize_domains dnsmasq-china test <<'EOF'
 server=/example.cn/8.8.8.8
 server=/example.net/2001:db8::1
 EOF

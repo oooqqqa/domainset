@@ -21,7 +21,7 @@ cat > "$expected_file" <<'EOF'
 .mixed-case.example
 EOF
 
-normalize_oisd "test-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
+normalize_domains oisd "test-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
 [Adblock Plus]
 ! comment
 
@@ -33,7 +33,7 @@ EOF
 diff -u "$expected_file" "$stdout_file"
 [[ ! -s "$stderr_file" ]]
 
-if normalize_oisd "bad-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
+if normalize_domains oisd "bad-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
 ||valid.example^
 example.org
 EOF
@@ -43,7 +43,7 @@ then
 fi
 grep -F "error: bad-source: line 2: unsupported input: example.org" "$stderr_file" >/dev/null
 
-if normalize_oisd "bad-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
+if normalize_domains oisd "bad-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
 ||bad..example^
 EOF
 then
@@ -59,7 +59,7 @@ cat > "$expected_file" <<'EOF'
 .mixed-case.example
 EOF
 
-normalize_dnsmasq_china "china-test-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
+normalize_domains dnsmasq-china "china-test-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
 # comment
 
 server=/0.zone/114.114.114.114
@@ -71,7 +71,7 @@ EOF
 diff -u "$expected_file" "$stdout_file"
 [[ ! -s "$stderr_file" ]]
 
-if normalize_dnsmasq_china "bad-china-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
+if normalize_domains dnsmasq-china "bad-china-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
 server=/valid.example/114.114.114.114
 address=/example.org/8.8.8.8
 EOF
@@ -81,7 +81,7 @@ then
 fi
 grep -F "error: bad-china-source: line 2: unsupported input: address=/example.org/8.8.8.8" "$stderr_file" >/dev/null
 
-if normalize_dnsmasq_china "bad-china-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
+if normalize_domains dnsmasq-china "bad-china-source" > "$stdout_file" 2> "$stderr_file" <<'EOF'
 server=/bad..example/114.114.114.114
 EOF
 then
@@ -107,8 +107,6 @@ EOF
     source "$repo_root/domainset-generator.sh"
     oisd_source_url=mock://oisd
     china_source_url=mock://china
-    ads_output_file=ads.txt
-    china_output_file=china.txt
     min_ads_count=2
     min_china_count=3
     min_apple_china_count=2
@@ -174,7 +172,7 @@ if (
 EOF
     }
 
-    generate_list mock://oisd "$output_file" 2 normalize_oisd
+    generate_list mock://oisd "$output_file" 2 oisd
 ) > "$stdout_file" 2> "$stderr_file"
 then
     echo "error: small output should fail" >&2

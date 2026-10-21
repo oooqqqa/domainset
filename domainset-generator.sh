@@ -4,9 +4,6 @@ set -euo pipefail
 oisd_source_url=https://big.oisd.nl
 china_source_url=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/accelerated-domains.china.conf
 apple_china_source_url=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/apple.china.conf
-ads_output_file=ads.txt
-china_output_file=china.txt
-apple_china_output_file=apple-china.txt
 # About 70% of each upstream's size in 2026-10; raise them as the upstreams grow.
 min_ads_count=160000
 min_china_count=75000
@@ -55,7 +52,7 @@ fetch_url() {
 
 normalize_domains() {
     local input_format=$1
-    local source=${2:-stdin}
+    local source=$2
 
     awk -v input_format="$input_format" -v source="$source" '
     function valid_domain(domain, min_labels, labels, count, i, label) {
@@ -130,41 +127,28 @@ normalize_domains() {
     '
 }
 
-normalize_oisd() {
-    normalize_domains oisd "${1:-stdin}"
-}
-
-normalize_dnsmasq_china() {
-    normalize_domains dnsmasq-china "${1:-stdin}"
-}
-
 generate_list() {
     local source_url=$1
     local output_file=$2
     local min_domain_count=$3
-    local normalizer=$4
+    local input_format=$4
     local count staged_file source_file
 
+    # Every failure exits through die: callers inside `if` would disable set -e.
     if [[ -z "$work_dir" ]]; then
         # Stage next to the outputs so install_lists renames within one filesystem.
-        work_dir=$(mktemp -d "$(dirname "$output_file")/.domainset.XXXXXX") || return 1
+        work_dir=$(mktemp -d .domainset.XXXXXX) || die "cannot create work directory"
         trap cleanup EXIT
     fi
-    staged_file="$work_dir/$(basename "$output_file")"
+    staged_file="$work_dir/$output_file"
     source_file="$staged_file.source"
 
     # Download to a file: curl truncates it before a retry, unlike a pipe.
-    if ! fetch_url "$source_url" "$source_file"; then
-        echo "error: $output_file: download failed" >&2
-        return 1
-    fi
+    fetch_url "$source_url" "$source_file" || die "$output_file: download failed"
+    normalize_domains "$input_format" "$source_url" < "$source_file" | LC_ALL=C sort -u > "$staged_file" \
+        || die "$output_file: normalization failed"
 
-    if ! "$normalizer" "$source_url" < "$source_file" | LC_ALL=C sort -u > "$staged_file"; then
-        echo "error: $output_file: normalization failed" >&2
-        return 1
-    fi
-
-    count=$(line_count "$staged_file") || return 1
+    count=$(line_count "$staged_file")
     if (( count < min_domain_count )); then
         die "$output_file: only $count domains (need $min_domain_count)"
     fi
@@ -176,16 +160,16 @@ install_lists() {
     local output_file
 
     for output_file in "${staged_files[@]}"; do
-        mv "$work_dir/$(basename "$output_file")" "$output_file" || return 1
+        mv "$work_dir/$output_file" "$output_file" || die "$output_file: install failed"
         printf "%s: %d domains\n" "$output_file" "$(line_count "$output_file")"
     done
     staged_files=()
 }
 
 main() {
-    generate_list "$oisd_source_url" "$ads_output_file" "$min_ads_count" normalize_oisd || return 1
-    generate_list "$china_source_url" "$china_output_file" "$min_china_count" normalize_dnsmasq_china || return 1
-    generate_list "$apple_china_source_url" "$apple_china_output_file" "$min_apple_china_count" normalize_dnsmasq_china || return 1
+    generate_list "$oisd_source_url" ads.txt "$min_ads_count" oisd
+    generate_list "$china_source_url" china.txt "$min_china_count" dnsmasq-china
+    generate_list "$apple_china_source_url" apple-china.txt "$min_apple_china_count" dnsmasq-china
     install_lists
 }
 
