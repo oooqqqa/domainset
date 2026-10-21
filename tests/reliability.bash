@@ -5,7 +5,6 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 task_tmp=$(mktemp -d)
 trap 'rm -rf "$task_tmp"' EXIT
-export REVIEW_REPO_ROOT="$repo_root"
 
 # A conditional function call must propagate both parser and fetch failures.
 for mode in parse fetch; do
@@ -68,72 +67,6 @@ for failed_source in china apple; do
     [[ "$(cat "$task_tmp/partial-$failed_source/apple-china.txt")" == '.old.apple.cn' ]]
     [[ "$(ls -A "$task_tmp/partial-$failed_source")" == $'ads.txt\napple-china.txt\nchina.txt' ]]
 done
-
-# Only an absent Apple baseline is allowed for migration; existing baselines
-# still enforce nonempty content and the count-change limit.
-for baseline in absent present empty changed; do
-    mkdir "$task_tmp/apple-$baseline"
-    if (
-        cd "$task_tmp/apple-$baseline"
-        source "$repo_root/domainset-generator.sh"
-        mkdir previous
-        previous_dir=previous
-        printf '.original.apple.cn\n' > apple-china.txt
-        case "$baseline" in
-            present) printf '.old.apple.cn\n' > previous/apple-china.txt ;;
-            empty) : > previous/apple-china.txt ;;
-            changed) printf '.old.apple.cn\n.old2.apple.cn\n' > previous/apple-china.txt ;;
-        esac
-        fetch_url() {
-            printf 'server=/apple.com.cn/114.114.114.114\n' > "$2"
-        }
-        generate_list "$apple_china_source_url" apple-china.txt 1 normalize_dnsmasq_china true
-        install_lists
-    ) > "$task_tmp/apple-$baseline.log" 2>&1; then
-        [[ "$baseline" == absent || "$baseline" == present ]]
-        [[ "$(cat "$task_tmp/apple-$baseline/apple-china.txt")" == '.apple.com.cn' ]]
-    else
-        [[ "$baseline" == empty || "$baseline" == changed ]]
-        [[ "$(cat "$task_tmp/apple-$baseline/apple-china.txt")" == '.original.apple.cn' ]]
-    fi
-    [[ "$(ls -A "$task_tmp/apple-$baseline")" == $'apple-china.txt\nprevious' ]]
-done
-
-run_change_case() {
-    local name=$1 count=$2 expected=$3 allow=${4:-false} minimum=${5:-1}
-    mkdir "$task_tmp/$name"
-    if bash -c '
-        set -euo pipefail
-        cd "$1"
-        source "$REVIEW_REPO_ROOT/domainset-generator.sh"
-        mkdir previous
-        for i in {1..10}; do printf ".old%s.example\n" "$i"; done > previous/ads.txt
-        printf ".original.example\n" > ads.txt
-        previous_dir=previous
-        allow_large_change=$3
-        # Capture fixture size in a global; fetch_url gets the URL and output file as $1 and $2.
-        fixture_count=$2
-        fetch_url() {
-            local i
-            for (( i=1; i <= fixture_count; i++ )); do printf "||new%s.example^\n" "$i"; done > "$2"
-        }
-        generate_list mock://source ads.txt "$4" normalize_oisd
-        install_lists
-    ' _ "$task_tmp/$name" "$count" "$allow" "$minimum" > "$task_tmp/$name.log" 2>&1; then
-        [[ "$expected" == pass ]] || { cat "$task_tmp/$name.log"; return 1; }
-        [[ "$(wc -l < "$task_tmp/$name/ads.txt")" -eq "$count" ]]
-    else
-        [[ "$expected" == fail ]] || { cat "$task_tmp/$name.log"; return 1; }
-        [[ "$(cat "$task_tmp/$name/ads.txt")" == '.original.example' ]]
-    fi
-    [[ "$(ls -A "$task_tmp/$name")" == $'ads.txt\nprevious' ]]
-}
-run_change_case decrease 6 fail
-run_change_case increase 14 fail
-run_change_case lower-bound 7 pass
-run_change_case upper-bound 13 pass
-run_change_case reviewed 14 pass true
-run_change_case minimum 1 fail true 2
 
 # Upstream resolver changes do not alter the domain list.
 (

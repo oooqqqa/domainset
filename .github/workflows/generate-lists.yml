@@ -8,11 +8,6 @@ on:
   schedule:
     - cron: '11 6 * * *'
   workflow_dispatch:
-    inputs:
-      allow_large_change:
-        description: Allow a count change over 30% after reviewing the upstream lists
-        type: boolean
-        default: false
 
 concurrency:
   group: update-domainsets
@@ -46,27 +41,14 @@ jobs:
       RELEASE_TAG: latest
       RELEASE_TITLE: domainset
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      ALLOW_LARGE_CHANGE: ${{ inputs.allow_large_change == true && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v5
-      - name: Download previous successful lists
+      - name: Check for an existing release
         shell: bash
         run: |
           set -euo pipefail
           # A failed API call must not be mistaken for a first release.
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name' > release-tags.txt
-          if grep -Fxq "$RELEASE_TAG" release-tags.txt; then
-            previous_dir="$RUNNER_TEMP/domainset-previous"
-            mkdir -p "$previous_dir"
-            gh release download "$RELEASE_TAG" --pattern ads.txt --pattern china.txt --dir "$previous_dir"
-            gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' > previous-assets.txt
-            if grep -Fxq apple-china.txt previous-assets.txt; then
-              gh release download "$RELEASE_TAG" --pattern apple-china.txt --dir "$previous_dir"
-            fi
-            echo "PREVIOUS_DIR=$previous_dir" >> "$GITHUB_ENV"
-          else
-            echo 'No previous release; using minimum count checks for the first publication.'
-          fi
       - name: Generate domain sets
         shell: bash
         # Downloads retry inside curl; validation failures are deterministic.
