@@ -1,53 +1,53 @@
 # domainset
 
-将三个固定上游转换为 **Surge DOMAIN-SET** 文本，每行一个域名后缀规则，每日自动更新。
+Converts three fixed upstream lists into **Surge DOMAIN-SET** text files, one domain suffix rule per line, updated daily.
 
-| 文件 | 上游 | 用途 |
+| File | Upstream | Purpose |
 | --- | --- | --- |
-| [ads.txt](https://github.com/oooqqqa/domainset/releases/download/latest/ads.txt) | [OISD big](https://big.oisd.nl) | 域名级拦截 |
-| [china.txt](https://github.com/oooqqqa/domainset/releases/download/latest/china.txt) | [dnsmasq-china-list](https://github.com/felixonmars/dnsmasq-china-list/blob/master/accelerated-domains.china.conf) | DNS 分流：交给适合中国网络的 DNS 解析器 |
-| [apple-china.txt](https://github.com/oooqqqa/domainset/releases/download/latest/apple-china.txt) | [dnsmasq-china-list Apple China](https://github.com/felixonmars/dnsmasq-china-list/blob/master/apple.china.conf) | Apple 服务的中国 DNS 分流 |
+| [ads.txt](https://github.com/oooqqqa/domainset/releases/download/latest/ads.txt) | [OISD big](https://big.oisd.nl) | Domain-level blocking |
+| [china.txt](https://github.com/oooqqqa/domainset/releases/download/latest/china.txt) | [dnsmasq-china-list](https://github.com/felixonmars/dnsmasq-china-list/blob/master/accelerated-domains.china.conf) | DNS routing: resolve with a DNS resolver suited to networks in China |
+| [apple-china.txt](https://github.com/oooqqqa/domainset/releases/download/latest/apple-china.txt) | [dnsmasq-china-list Apple China](https://github.com/felixonmars/dnsmasq-china-list/blob/master/apple.china.conf) | China DNS routing for Apple services |
 
-## china.txt 和 apple-china.txt 的含义
+## What china.txt and apple-china.txt mean
 
-`china.txt` 上游选择的是使用中国 DNS 解析更快或 CDN 结果更合适的域名，可能包含海外网站。
-`apple-china.txt` 单独收录上游 Apple 中国加速域名，与 `china.txt` 不重叠。
-这两份列表不代表网站或公司的国籍，也不保证所有匹配的连接都适合 `DIRECT`。
-请将 DNS 解析服务器选择与连接出站策略分别配置，并按实际网络验证效果。
-本项目只提供域名列表，不包含 DNS 服务器地址或出站策略。
+The `china.txt` upstream selects domains that resolve faster or get better CDN results through a Chinese DNS resolver; it may include overseas sites.
+`apple-china.txt` contains only the upstream Apple China accelerated domains and does not overlap with `china.txt`.
+Neither list indicates the nationality of a site or company, nor guarantees that every matching connection is suitable for `DIRECT`.
+Configure DNS resolver selection and outbound connection policy separately, and verify the results on your actual network.
+This project provides domain lists only; it does not include DNS server addresses or outbound policies.
 
-## 转换规则
+## Conversion rules
 
-| 上游行 | 输出 |
+| Upstream line | Output |
 | --- | --- |
-| `\|\|example.com^`（OISD） | `.example.com` |
-| `server=/example.cn/114.114.114.114`（dnsmasq） | `.example.cn` |
-| `server=/cn/114.114.114.114`（顶级规则） | `.cn` |
+| `\|\|example.com^` (OISD) | `.example.com` |
+| `server=/example.cn/114.114.114.114` (dnsmasq) | `.example.cn` |
+| `server=/cn/114.114.114.114` (top-level rule) | `.cn` |
 
-- 域名统一转为小写，排序去重。dnsmasq 规则中的 DNS 地址不写入输出。
-- 跳过空行、OISD 的 `[Adblock Plus]` 头和 `!` 注释、dnsmasq 的 `#` 注释。
-- 其他任何输入或不合法的域名都立即报错并给出行号，不静默丢弃规则。
+- Domains are lowercased, sorted and deduplicated. DNS addresses in dnsmasq rules are not written to the output.
+- Blank lines, the OISD `[Adblock Plus]` header and `!` comments, and dnsmasq `#` comments are skipped.
+- Any other input or invalid domain fails immediately with its line number; rules are never silently dropped.
 
-前导点在 Surge 中匹配域名本身及全部子域名。
+In Surge, a leading dot matches the domain itself and all of its subdomains.
 
-## 发布保护
+## Publishing safeguards
 
-- 三份列表都通过校验后才一起替换；任一失败时原有文件和 Release 保持不变。
-- 每份列表有最低条数（约为上游规模的七成），防止上游变空、大幅缩水或下载被截断。
-  上游正常增长后需手动调高。
+- The three lists are replaced together only after all of them pass validation; if any fails, the existing files and Release stay unchanged.
+- Each list has a minimum entry count (about 70% of the upstream size) to guard against an empty, sharply shrunken or truncated upstream download.
+  Raise it manually as the upstream grows.
 
-Release `latest` 需预先存在，附件持续覆盖，不保存历史；附带 `manifest.json`
-（生成时间、生成器提交、来源、条数和 SHA256 校验和）。
+The `latest` Release must exist beforehand. Its assets are overwritten on each run and no history is kept; it also carries `manifest.json`
+(generation time, generator commit, sources, entry counts and SHA256 checksums).
 
-## 本地运行与开发
+## Running locally and development
 
 ```sh
-bash ./domainset-generator.sh   # 输出到当前目录
+bash ./domainset-generator.sh   # writes to the current directory
 ```
 
-依赖 Bash 3.2+、curl 7.71+。
+Requires Bash 3.2+ and curl 7.71+.
 
-测试用替换 `fetch_url` 的方式模拟上游，不访问网络，需要 jq：
+Tests simulate the upstreams by replacing `fetch_url`, so they do not access the network. They require jq:
 
 ```sh
 shellcheck ./domainset-generator.sh ./tests/*.bash ./scripts/*.bash
